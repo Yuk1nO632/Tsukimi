@@ -2,14 +2,24 @@
 $frontendRoot = Split-Path -Parent $PSScriptRoot
 $coverDirectory = Join-Path $frontendRoot 'public\covers'
 [System.IO.Directory]::CreateDirectory($coverDirectory) | Out-Null
-$subjectIds = @(400602, 395378, 328609, 183878, 207195, 326895)
+# Curated 2026 autumn picks; change these IDs and the season together next quarter.
+$featuredIds = @(568244, 548156, 567896)
+$featuredSeason = [ordered]@{ label = '2026 年 10 月 · 秋季新番'; start = '2026-10-01'; end = '2027-01-01' }
+$subjectIds = @($featuredIds) + @(400602, 395378, 328609, 183878, 207195, 326895)
 $userAgent = 'Tsukimi/0.2 (personal fullstack study project)'
 $catalog = @()
 
 foreach ($subjectId in $subjectIds) {
     Write-Host "Reading Bangumi subject $subjectId ..."
-    $subject = Invoke-RestMethod -Uri "https://api.bgm.tv/v0/subjects/$subjectId" -UserAgent $userAgent -TimeoutSec 30
+    # Windows PowerShell 5.1 may infer a legacy charset when JSON omits charset.
+    $response = Invoke-WebRequest -UseBasicParsing -Uri "https://api.bgm.tv/v0/subjects/$subjectId" -UserAgent $userAgent -TimeoutSec 30
+    $subject = [System.Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray()) | ConvertFrom-Json
     if (-not $subject.id -or $subject.type -ne 2) { throw "Invalid anime subject: $subjectId" }
+    if ($subjectId -in $featuredIds) {
+        if ([string]::IsNullOrWhiteSpace($subject.date) -or $subject.date -lt $featuredSeason.start -or $subject.date -ge $featuredSeason.end) {
+            throw "Featured subject $subjectId is outside the selected season. Update the curated IDs and season together."
+        }
+    }
     $title = $subject.name_cn
     if ([string]::IsNullOrWhiteSpace($title)) { $title = $subject.name }
     $coverUrl = $subject.images.large
@@ -60,7 +70,7 @@ foreach ($subjectId in $subjectIds) {
 }
 
 $catalogJson = ConvertTo-Json -InputObject @($catalog) -Depth 10
-$meta = [ordered]@{ source = 'Bangumi Open API'; syncedAt = [DateTimeOffset]::Now.ToString('o'); mode = 'local snapshot'; count = $catalog.Count }
+$meta = [ordered]@{ source = 'Bangumi Open API'; syncedAt = [DateTimeOffset]::Now.ToString('o'); mode = 'local snapshot'; count = $catalog.Count; featuredIds = @($featuredIds | ForEach-Object { "bgm-$_" }); featuredSeason = $featuredSeason }
 $metaJson = ConvertTo-Json -InputObject $meta -Depth 4
 $output = "// Generated from Bangumi public API. Refresh with npm.cmd run sync:catalog.`nexport const bangumiCatalog = $catalogJson;`nexport const catalogMeta = $metaJson;`n"
 [System.IO.File]::WriteAllText((Join-Path $frontendRoot 'lib\catalog.generated.js'), $output, [System.Text.UTF8Encoding]::new($false))

@@ -14,8 +14,8 @@ npm.cmd run dev
 ## 当前阶段
 
 - 番剧频道首页、真实资料详情和独立播放页 UI 已实现。
-- 六部真实动画资料来自 Bangumi API，更新命令为 `npm.cmd run sync:catalog`。
-- 默认首页只显示真实资料；之前的 forest、coast、evening 演示地址保留兼容，避免学习文档里的旧链接失效。
+- 九部真实动画资料来自 Bangumi API，更新命令为 `npm.cmd run sync:catalog`。
+- 正式项目只展示真实资料，旧虚构条目已移除；复习实验仍单独保存在 experiments。
 - 视频源、弹幕、账号、数据库尚未接入。播放页会明确显示来源状态。
 - 收藏由浏览器共享 state 管理，站内导航保留，完整刷新重置。
 

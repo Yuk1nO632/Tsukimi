@@ -1,23 +1,81 @@
 "use client";
+
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
-
-const scenes = [
-  { id: "moonlight", image: "/artwork/moonlight.png", label: "月下放映室", kicker: "MOONLIT STORIES", title: "下一集的故事，\n从这里开始。", description: "把那些闪闪发光的故事，放进自己的追番时光。", accent: "月光与奇幻", query: "奇幻" },
-  { id: "seabreeze", image: "/artwork/seabreeze.png", label: "海风来信", kicker: "A LITTLE SUMMER MAGIC", title: "留一点时间，\n给喜欢的日常。", description: "青春、音乐与夏天。总有一个故事，让今天轻盈一点。", accent: "青春与日常", query: "日常" },
-  { id: "sunset-train", image: "/artwork/sunset-train.png", label: "黄昏慢行", kicker: "TAKE THE SCENIC ROUTE", title: "旅途还很长，\n喜欢不必散场。", description: "在一段新的旅程里，遇见还没看过的风景。", accent: "治愈与旅行", query: "治愈" },
-];
+import { useEffect, useState } from "react";
+import { featuredAnime, catalogMeta } from "../lib/anime";
 
 export default function FeaturedHero() {
   const [activeIndex, setActiveIndex] = useState(0);
-  const active = scenes[activeIndex];
-  function move(offset) { setActiveIndex((previous) => (previous + offset + scenes.length) % scenes.length); }
+  const [paused, setPaused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [pageVisible, setPageVisible] = useState(true);
+  const [reducedMotion, setReducedMotion] = useState(true);
+  const active = featuredAnime[activeIndex];
+
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateMotion = () => setReducedMotion(preference.matches);
+    const updateVisibility = () => setPageVisible(!document.hidden);
+    updateMotion();
+    updateVisibility();
+    preference.addEventListener("change", updateMotion);
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => {
+      preference.removeEventListener("change", updateMotion);
+      document.removeEventListener("visibilitychange", updateVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (paused || hovered || focused || reducedMotion || !pageVisible || featuredAnime.length < 2) return;
+    const timer = window.setTimeout(() => {
+      setActiveIndex((previous) => (previous + 1) % featuredAnime.length);
+    }, 6500);
+    return () => window.clearTimeout(timer);
+  }, [activeIndex, paused, hovered, focused, reducedMotion, pageVisible]);
+
+  if (!active) return null;
+  function move(offset) {
+    setActiveIndex((previous) => (previous + offset + featuredAnime.length) % featuredAnime.length);
+  }
+
   return (
-    <section className="feature-hero" aria-label="Tsukimi 推荐主题">
-      <div className="feature-backdrop" key={active.id}><Image src={active.image} alt="Tsukimi 原创氛围插画" fill priority sizes="100vw" /><div className="feature-shade" /></div>
-      <div className="feature-content content-shell"><span className="feature-kicker"><span /> TSUKIMI PICKS · {active.kicker}</span><h1>{active.title}</h1><p>{active.description}</p><div className="hero-actions"><Link className="primary-link" href={`/?q=${encodeURIComponent(active.query)}#library`}><span aria-hidden="true">▶</span> 探索番剧</Link><Link className="hero-secondary" href="/?view=favorites#library">我的追番 ↗</Link></div><div className="hero-art-note">{active.accent}<span>Tsukimi 原创插画</span></div></div>
-      <div className="hero-bottom content-shell"><div className="hero-tabs" role="group" aria-label="推荐主题切换">{scenes.map((scene, index) => <button key={scene.id} className={`hero-tab${index === activeIndex ? " is-active" : ""}`} type="button" aria-label={`切换主题：${scene.label}`} aria-pressed={index === activeIndex} onClick={() => setActiveIndex(index)}><Image src={scene.image} alt="" fill sizes="(max-width: 600px) 30vw, 180px" /><span>{scene.label}</span>{index === activeIndex && <i aria-hidden="true">●</i>}</button>)}</div><div className="hero-arrows"><span>0{activeIndex + 1}<i> / 03</i></span><button type="button" onClick={() => move(-1)} aria-label="上一个推荐主题">‹</button><button type="button" onClick={() => move(1)} aria-label="下一个推荐主题">›</button></div></div>
+    <section className="season-hero" aria-roledescription="轮播" aria-label="当季新番推荐"
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
+      <div className="season-backdrop" aria-hidden="true" key={active.id}>
+        <Image src={active.cover} alt="" fill priority sizes="100vw" />
+      </div>
+      <div className="season-inner content-shell">
+        <div className="season-copy" aria-live="off">
+          <span className="season-kicker"><i /> {catalogMeta.featuredSeason.label}</span>
+          <p className="season-eyebrow">THIS SEASON, YOUR NEXT STORY.</p>
+          <h1>{active.title}</h1>
+          <div className="season-facts"><span>{active.releaseDate} 首播</span><span>{active.category}</span></div>
+          <p className="season-description">{active.description}</p>
+          <div className="hero-actions"><Link className="primary-link" href={`/anime/${active.id}`}>查看番剧 <span aria-hidden="true">↗</span></Link><Link className="hero-secondary" href="/?view=favorites#library">我的追番</Link></div>
+          <a className="season-source" href={active.sourceUrl} target="_blank" rel="noreferrer">资料与海报来源：Bangumi ↗</a>
+        </div>
+        <Link className="season-keyvisual" href={`/anime/${active.id}`} aria-label={`查看《${active.title}》详情`}>
+          <Image key={active.id} src={active.cover} alt={`${active.title} 海报`} fill priority sizes="(max-width: 600px) 38vw, 300px" />
+        </Link>
+      </div>
+      <div className="season-bottom content-shell">
+        <div className="season-tabs" role="group" aria-label="切换当季新番">
+          {featuredAnime.map((anime, index) => (
+            <button key={anime.id} className={`season-tab${index === activeIndex ? " is-active" : ""}`} type="button"
+              aria-label={`推荐：${anime.title}`} aria-pressed={index === activeIndex} onClick={() => setActiveIndex(index)}>
+              <span className="season-tab-cover"><Image src={anime.cover} alt="" fill sizes="48px" /></span>
+              <span className="season-tab-copy"><small>0{index + 1} / 秋季新番</small><strong>{anime.title}</strong></span>
+              {index === activeIndex && <i aria-hidden="true">●</i>}
+            </button>
+          ))}
+        </div>
+        <div className="season-controls"><span>{String(activeIndex + 1).padStart(2, "0")} <i>/ {String(featuredAnime.length).padStart(2, "0")}</i></span><button type="button" onClick={() => move(-1)} aria-label="上一部新番">‹</button><button type="button" onClick={() => move(1)} aria-label="下一部新番">›</button><button className="season-pause" type="button" aria-label={paused ? "继续自动轮播" : "暂停自动轮播"} aria-pressed={paused} onClick={() => setPaused((previous) => !previous)}>{paused ? "▷" : "Ⅱ"}</button></div>
+      </div>
     </section>
   );
 }
