@@ -1,5 +1,8 @@
+import { bangumiCatalog, catalogMeta } from "./catalog.generated";
+export { catalogMeta };
+export const animeList = bangumiCatalog;
 // 当前为虚构演示资料。后续由 FastAPI 接口提供真实番剧资料。
-export const animeList = [
+const legacyDemoList = [
   {
     id: "forest", title: "月光邮便局", category: "奇幻 / 日常", episodes: 12,
     description: "把没来得及说的话，寄给月亮另一端的人。",
@@ -23,6 +26,13 @@ export const animeList = [
   },
 ];
 
+
+// 兼容之前的学习示例链接，首页正式片单只展示真实资料。
+const demoArtwork = { forest: "/artwork/moonlight.png", coast: "/artwork/seabreeze.png", evening: "/artwork/sunset-train.png" };
+const legacyAnime = legacyDemoList.map((anime) => ({ ...anime, cover: demoArtwork[anime.id], isDemo: true, tags: anime.category.split(" / "), score: 0 }));
 export function getAnime(id) {
-  return animeList.find((anime) => anime.id === id);
+  return animeList.find((anime) => anime.id === id) || legacyAnime.find((anime) => anime.id === id);
+}
+export function getAllAnimeIds() {
+  return [...animeList, ...legacyAnime].map((anime) => anime.id);
 }

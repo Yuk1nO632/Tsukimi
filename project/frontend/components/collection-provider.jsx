@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { getAnime } from "../lib/anime";
 
 const CollectionContext = createContext(null);
@@ -10,6 +10,12 @@ const CollectionContext = createContext(null);
 export function CollectionProvider({ children }) {
   const [favoriteIds, setFavoriteIds] = useState([]);
   const [feedback, setFeedback] = useState("");
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(""), 2800);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
   function toggleFavorite(id) {
     const anime = getAnime(id);

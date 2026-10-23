@@ -1,11 +1,12 @@
-export default function AnimePoster({ anime, number }) {
+import Image from "next/image";
+export default function AnimePoster({ anime }) {
   return (
-    <div className={`poster scene-${anime.scene}`} aria-hidden="true">
-      <span className="poster-grain" /><span className="poster-disc" />
-      <span className="poster-hill hill-back" /><span className="poster-hill hill-front" />
-      <span className="poster-line" /><span className="poster-kicker">{anime.kicker}</span>
-      <span className="poster-lettering">{anime.lettering}</span>
-      <span className="poster-number">{String(number).padStart(2, "0")}</span>
+    <div className={`poster${anime.isDemo ? " is-demo-poster" : ""}`}>
+      <Image src={anime.cover} alt="" fill sizes="(max-width: 600px) 45vw, (max-width: 1000px) 25vw, 220px" />
+      <span className="poster-gradient" />
+      <span className="poster-episodes">{anime.episodes > 0 ? `全 ${anime.episodes} 集` : "集数待定"}</span>
+      {anime.score > 0 && <span className="poster-score">{anime.score.toFixed(1)}</span>}
+      {anime.isDemo && <span className="poster-demo">演示</span>}
     </div>
   );
 }

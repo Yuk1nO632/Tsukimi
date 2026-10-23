@@ -1,19 +1,22 @@
 # Tsukimi 正式项目
 
-这个目录保存持续迭代的正式应用。`../experiments/` 保存独立复习实验，`../docs/` 保存学习记录和阶段说明；整个工作区共用根目录的 Git 仓库。
+正式应用位于这个目录；复习实验位于工作区根的 experiments，文档位于 docs。整个工作区共用一个 Git 仓库，未来直接在当前应用上迭代。
 
-## 当前目录
-
-- `frontend/`：Next.js 前端，包含首页、搜索、收藏与番剧详情。
-- `backend/`：下一阶段引入 FastAPI 时再创建，当前尚无业务后端。
-
-## 启动前端
+## 启动
 
 ```powershell
 cd C:\Users\lx\Desktop\Tsukimi\project\frontend
 npm.cmd run dev
 ```
 
-打开 http://127.0.0.1:3000。依赖已经安装；新电脑先运行 `npm.cmd ci`。完整构建使用 `npm.cmd run build`，构建后可运行 `npm.cmd start`。
+打开 http://127.0.0.1:3000。新环境先 `npm.cmd ci`。构建使用 `npm.cmd run build`，构建后可用 `npm.cmd start` 运行。
 
-当前使用虚构演示资料。收藏由浏览器中的共享 React state 管理，站内 Link 导航会保留，完整刷新会重置。下一阶段接 FastAPI 和 SQLite，实现持久保存。
+## 当前阶段
+
+- 番剧频道首页、真实资料详情和独立播放页 UI 已实现。
+- 六部真实动画资料来自 Bangumi API，更新命令为 `npm.cmd run sync:catalog`。
+- 默认首页只显示真实资料；之前的 forest、coast、evening 演示地址保留兼容，避免学习文档里的旧链接失效。
+- 视频源、弹幕、账号、数据库尚未接入。播放页会明确显示来源状态。
+- 收藏由浏览器共享 state 管理，站内导航保留，完整刷新重置。
+
+接下来创建 backend，引入 FastAPI 和 SQLite；联网搜索与后续来源适配再逐步迁移到后端。
