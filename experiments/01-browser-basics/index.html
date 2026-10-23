@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Tsukimi 追番学习实验：从一份小小的追番单开始。">
+    <meta name="theme-color" content="#f5f5ee">
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+    <title>Tsukimi · 我的追番单</title>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Tsukimi 首页"><span class="brand-mark" aria-hidden="true"></span>Tsukimi<span class="brand-caption">月见</span></a>
+        <span class="header-note">一份属于自己的追番单</span>
+        <div class="saved-indicator"><span aria-hidden="true">♡</span><span>已收藏 <strong id="header-count">0</strong></span></div>
+      </header>
+
+      <main>
+        <section class="hero" aria-labelledby="hero-title">
+          <div class="hero-copy">
+            <span class="eyebrow">A LITTLE TIME FOR YOUR STORIES</span>
+            <h1 id="hero-title">月下片刻，<br>故事未完<span class="accent-dot">。</span></h1>
+            <p>把喜欢的故事留在这里。<br>从一份小小的追番单，开始下一集的期待。</p>
+            <span class="hero-label"><span class="status-dot" aria-hidden="true"></span>Tsukimi · 最初的一页</span>
+          </div>
+          <div class="moon-scene" aria-hidden="true"><span class="moon-orbit orbit-one"></span><span class="moon-orbit orbit-two"></span><span class="large-moon"></span><span class="small-star star-one">✦</span><span class="small-star star-two">✧</span><span class="scene-caption">月がきれいですね</span></div>
+        </section>
+
+        <section class="library" aria-labelledby="library-title">
+          <div class="section-heading">
+            <div><span class="eyebrow">YOUR LITTLE COLLECTION</span><h2 id="library-title">我的追番单 <span class="library-total">03</span></h2></div>
+            <div class="filters" role="group" aria-label="番剧筛选">
+              <button class="filter-button is-active" data-filter="all" aria-pressed="true" type="button">全部</button>
+              <button class="filter-button" data-filter="favorites" aria-pressed="false" type="button">已收藏 <span id="filter-count">0</span></button>
+            </div>
+          </div>
+          <div id="anime-grid" class="anime-grid"></div>
+          <div id="empty-state" class="empty-state" hidden><span aria-hidden="true">☾</span><h3>这里还没有收藏</h3><p>遇见喜欢的故事，就为它留一个位置。</p><button id="show-all" type="button">浏览全部</button></div>
+          <p class="feedback" id="feedback" role="status" aria-live="polite">试着收藏一个故事吧。</p>
+        </section>
+        <noscript><p class="experiment-note">请启用 JavaScript，才能显示演示条目并体验收藏交互。</p></noscript>
+        <aside class="experiment-note" aria-label="实验说明"><span class="note-label">实验 01</span><p>这里使用虚构的演示条目。收藏暂存在当前页面，刷新后会重置。</p><span class="note-detail">先观察，再理解。</span></aside>
+      </main>
+      <footer><span>Tsukimi <span class="footer-dot">·</span> 下一集，继续喜欢。</span><span>MADE FOR THE STORIES YOU LOVE</span></footer>
+    </div>
+
+    <template id="anime-card-template">
+      <article class="anime-card">
+        <div class="poster" aria-hidden="true"><span class="poster-grain"></span><span class="poster-disc"></span><span class="poster-hill hill-back"></span><span class="poster-hill hill-front"></span><span class="poster-line"></span><span class="poster-kicker"></span><span class="poster-lettering"></span><span class="poster-number"></span></div>
+        <div class="card-body"><p class="card-meta"></p><h3></h3><p class="card-description"></p><div class="card-bottom"><span class="episode-count"></span><button class="favorite-button" type="button" aria-pressed="false"><span class="favorite-icon" aria-hidden="true">♡</span><span class="favorite-label">收藏</span></button></div></div>
+      </article>
+    </template>
+  </body>
+</html>
