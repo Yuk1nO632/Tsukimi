@@ -1,7 +1,7 @@
-import { bangumiCatalog, catalogMeta } from "./catalog.generated";
+import catalog from "../../catalog/catalog.json";
 
-export { catalogMeta };
-export const animeList = bangumiCatalog;
+export const catalogMeta = catalog.meta;
+export const animeList = catalog.anime;
 export const featuredAnime = catalogMeta.featuredIds
   .map((id) => animeList.find((anime) => anime.id === id))
   .filter(Boolean);

@@ -1,22 +1,31 @@
 # Tsukimi 正式项目
 
-正式应用位于这个目录；复习实验位于工作区根的 experiments，文档位于 docs。整个工作区共用一个 Git 仓库，未来直接在当前应用上迭代。
+frontend 是 Next.js 页面，backend 是 FastAPI 接口与 SQLite，catalog 是两端共用的番剧 JSON 资料。复习实验在根目录 experiments，整个工作区共用 Git 仓库。
 
-## 启动
+## 开发启动
+
+终端 1：
+
+```powershell
+cd C:\Users\lx\Desktop\Tsukimi\project\backend
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+终端 2：
 
 ```powershell
 cd C:\Users\lx\Desktop\Tsukimi\project\frontend
 npm.cmd run dev
 ```
 
-打开 http://127.0.0.1:3000。新环境先 `npm.cmd ci`。构建使用 `npm.cmd run build`，构建后可用 `npm.cmd start` 运行。
+页面：http://127.0.0.1:3000；接口文档：http://127.0.0.1:8000/docs。
 
 ## 当前阶段
 
-- 番剧频道首页、真实资料详情和独立播放页 UI 已实现。
-- 九部真实动画资料来自 Bangumi API，更新命令为 `npm.cmd run sync:catalog`。
-- 正式项目只展示真实资料，旧虚构条目已移除；复习实验仍单独保存在 experiments。
-- 视频源、弹幕、账号、数据库尚未接入。播放页会明确显示来源状态。
-- 收藏由浏览器共享 state 管理，站内导航保留，完整刷新重置。
+- 九部真实资料、首页与详情、独立播放页 UI 已实现。
+- 收藏通过 /api/favorites 读写，匿名 Cookie 区分浏览器，SQLite 保存数据。
+- 页面刷新与后端重启后记录保留；清除 Cookie 或匿名会话超过 30 天不保证找回旧片单。
+- 视频来源、弹幕、账号与跨设备同步尚未接入。
+- 资料同步在 frontend 运行 npm.cmd run sync:catalog，输出 catalog/catalog.json；同步后重启后端。
 
-接下来创建 backend，引入 FastAPI 和 SQLite；联网搜索与后续来源适配再逐步迁移到后端。
+详细安装、复习步骤与验收见 ../docs/05-收藏接口与数据库.md；数据库文件 backend/data/tsukimi.db 不提交 Git。

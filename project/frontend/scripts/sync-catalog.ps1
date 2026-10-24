@@ -69,9 +69,10 @@ foreach ($subjectId in $subjectIds) {
     Write-Host "Saved: $title ($episodeCount episodes)"
 }
 
-$catalogJson = ConvertTo-Json -InputObject @($catalog) -Depth 10
 $meta = [ordered]@{ source = 'Bangumi Open API'; syncedAt = [DateTimeOffset]::Now.ToString('o'); mode = 'local snapshot'; count = $catalog.Count; featuredIds = @($featuredIds | ForEach-Object { "bgm-$_" }); featuredSeason = $featuredSeason }
-$metaJson = ConvertTo-Json -InputObject $meta -Depth 4
-$output = "// Generated from Bangumi public API. Refresh with npm.cmd run sync:catalog.`nexport const bangumiCatalog = $catalogJson;`nexport const catalogMeta = $metaJson;`n"
-[System.IO.File]::WriteAllText((Join-Path $frontendRoot 'lib\catalog.generated.js'), $output, [System.Text.UTF8Encoding]::new($false))
-Write-Host "Catalog updated: $($catalog.Count) anime. Video sources are not included."
+# One JSON catalog is shared by the Next.js UI and FastAPI validation.
+$sharedDirectory = Join-Path (Split-Path -Parent $frontendRoot) 'catalog'
+[System.IO.Directory]::CreateDirectory($sharedDirectory) | Out-Null
+$output = ConvertTo-Json -InputObject ([ordered]@{ anime = @($catalog); meta = $meta }) -Depth 12
+[System.IO.File]::WriteAllText((Join-Path $sharedDirectory 'catalog.json'), $output + "`n", [System.Text.UTF8Encoding]::new($false))
+Write-Host "Catalog updated: $($catalog.Count) anime. Restart the backend after syncing. Video sources are not included."

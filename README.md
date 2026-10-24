@@ -2,68 +2,79 @@
 
 下一集，继续喜欢。
 
-一个在全栈课程复习中持续迭代的个人追番 Web 项目。正式应用和学习实验分开，整个工作区由同一个 Git 仓库管理。
+一个在全栈课程复习中持续迭代的个人追番 Web 项目。正式应用和复习实验分开，整个工作区由同一个 Git 仓库管理。
 
 ## 启动正式项目
 
-用 VS Code 打开整个 Tsukimi，在终端运行：
+用 VS Code 打开整个 Tsukimi，打开两个终端。当前机器依赖已经安装，无需每次重新安装。
+
+终端 1：启动后端。
+
+```powershell
+cd C:\Users\lx\Desktop\Tsukimi\project\backend
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+终端 2：启动前端。
 
 ```powershell
 cd C:\Users\lx\Desktop\Tsukimi\project\frontend
 npm.cmd run dev
 ```
 
-打开 http://127.0.0.1:3000。结束时按 `Ctrl+C`。当前依赖已安装，新环境先运行 `npm.cmd ci`。如果旧的开发服务还开着，先停止并重新启动，确保加载本轮路由和样式。
+打开 http://127.0.0.1:3000。后端接口文档：http://127.0.0.1:8000/docs。停止服务时，在对应终端按 Ctrl+C。若旧的前端服务还开着，先停止再启动，以加载 API 转发配置。
+
+新环境安装：前端运行 npm.cmd ci；后端运行 python -m venv .venv，再运行 .\.venv\Scripts\python.exe -m pip install -r requirements.txt。测试依赖见 requirements-dev.txt。
 
 ## 当前已实现
 
-- 参考 B 站番剧频道的首页：真实当季新番轮播、海报导航、番剧封面、分类筛选、首播日历与个人片单。
-- 真实番剧资料：通过 Bangumi API 同步九部动画的名称、简介、封面、集数、标签和评分，保留本地资料缓存。
-- 首页搜索、收藏、详情页、独立播放页，以及跨页面共享收藏状态。
-- 播放页选集与 URL 高亮、上一集/下一集、宽屏和全屏布局。
-- 桌面与手机布局、空状态和 404 页面。
+- 参考 B 站番剧频道的首页与播放页，真实当季新番轮播和九部真实番剧资料。
+- 分类、搜索、详情、首播日历、个人片单及手机布局。
+- 播放页选集、上一集/下一集、宽屏、全屏；视频与弹幕尚未接入。
+- FastAPI 收藏接口与 SQLite 数据库，收藏和取消收藏在刷新、后端重启后仍然保留。
+- 匿名 Cookie 区分浏览器；前端提供读取中、保存中、失败重试，后端确认保存成功后才更新收藏状态。
 
-当前播放器尚未接入视频来源，播放和弹幕明确显示未开放；选集导航和界面操作已可用。收藏仍在浏览器内存中，完整刷新会归零，下一阶段用 FastAPI + SQLite 持久保存。
+收藏保存在 project/backend/data/tsukimi.db，Cookie 有效期为首次建立会话起 30 天。请持续使用同一浏览器和地址；清除 Cookie、隐私窗口或更换浏览器会建立另一份片单，目前没有账号与跨设备同步。
 
-当前搜索范围是已同步的九部真实动画，不是对全部 Bangumi 条目的在线搜索。评分、日期都是资料缓存，不代表本站播放热度或当前更新排期。
+搜索范围是已同步的九部动画，不是全站联网搜索。评分、日期是资料快照，不代表本站热度或当前更新排期。视频源尚未接入，暂时不能实际播放。
 
-## 更新真实资料
+## 更新资料与执行检查
 
-在 `project/frontend` 中运行：
+在 project/frontend 运行 npm.cmd run sync:catalog，资料写入 project/catalog/catalog.json，封面保存到 frontend/public/covers。更新后重启后端以重新读取片单；当前季度推荐需要人工维护。
 
-```powershell
-npm.cmd run sync:catalog
-```
+前端构建：在 frontend 中运行 npm.cmd run build。
 
-同步脚本通过系统网络访问 Bangumi 公开 API，下载选定条目的资料和封面。依赖网络的更新操作与日常页面访问分开；已有缓存可以让开发页面在接口暂时不可用时继续打开。
+后端测试：在 backend 中先运行 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt，再运行 .\.venv\Scripts\python.exe -m unittest -v。测试使用临时数据库，不修改个人收藏。
 
 ## 工作区结构
 
 ```text
 Tsukimi/
   .git/                 统一 Git 仓库
-  docs/                 计划、阶段说明、学习记录和素材说明
-  experiments/          原生页面与 React 的独立复习实验
+  docs/                 计划、阶段指南和学习记录
+  experiments/          原生页面与 React 复习实验
   project/
-    frontend/           正式 Next.js 前端
+    frontend/           Next.js 前端
+    backend/            FastAPI 接口与 SQLite 存储
+    catalog/            前后端共用的本地番剧资料
 ```
 
-`project/backend/` 在开始 FastAPI 开发时创建。正式功能直接在 project 内迭代，每个完成并验证的阶段提交 Git。
+数据库、虚拟环境、node_modules、缓存与测试截图不提交 Git。正式功能持续在 project 内迭代，每个验证通过的阶段保存 Git 版本。
 
 ## 阅读入口
 
-- [本轮：频道 UI、播放页与真实资料](docs/04-番剧频道与真实资料.md)
-- [海报与资料来源](docs/素材说明.md)
+- [本轮：收藏接口、Cookie 与 SQLite](docs/05-收藏接口与数据库.md)
+- [频道 UI、播放页与真实资料](docs/04-番剧频道与真实资料.md)
+- [素材来源](docs/素材说明.md)
 - [Git 使用约定](docs/Git使用约定.md)
 - [复习与项目计划](docs/复习与项目计划.md)
 - [学习记录](docs/学习记录.md)
-- [第一阶段：Next.js 首页与详情](docs/03-正式项目与Next路由.md)
 
 ## 保留的复习实验
 
-实验 01：进入根目录运行 `python -m http.server 5173 --bind 127.0.0.1 --directory experiments/01-browser-basics`，访问 http://127.0.0.1:5173；根目录 start.ps1 也仍用于这个实验。
+实验 01：根目录运行 python -m http.server 5173 --bind 127.0.0.1 --directory experiments/01-browser-basics，访问 http://127.0.0.1:5173；start.ps1 也仍用于这个实验。
 
-实验 02：进入 `experiments/02-react-state` 运行 `npm.cmd run dev`，访问 http://127.0.0.1:5174。
+实验 02：进入 experiments/02-react-state 运行 npm.cmd run dev，访问 http://127.0.0.1:5174。
 
 - [实验 01 指南](docs/01-浏览器与页面状态.md)
 - [实验 02 指南](docs/02-React组件与状态.md)
