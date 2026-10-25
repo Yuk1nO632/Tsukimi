@@ -47,3 +47,13 @@ python -m venv .venv
 ```
 
 测试不修改个人数据库。当前依赖版本的 TestClient 会提示旧 httpx 兼容层将弃用，该提示不影响测试执行。
+
+## 稀饭动漫单源播放
+
+playback.py 提供 GET /api/sources/xifan/search?q=关键词 与 GET /api/playback/{anime_id}?episode=1。后者可附带 source_anime_id 和 line_id 进行显式匹配与线路选择。
+
+xifan.py 请求稀饭 Next 的公开搜索、选集和临时播放地址接口；metadata 缓存 5 分钟，播放地址在每次解析时重新申请。视频由浏览器直接连接 CDN，后端不转发视频字节。当前只允许核对过的两个 CDN 主机。
+
+默认匹配保存在 ../catalog/xifan-bindings.json，目前仅预置芙莉莲对应来源条目 26。其余作品由界面搜索和人工确认；query source 是来源作品 ID，不是 Bangumi ID。
+
+当前测试共 18 项，来源相关测试使用 MockTransport，无需访问上游。真实端到端播放还需网络，详见根目录 docs/06-真实播放器与稀饭来源.md。

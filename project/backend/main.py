@@ -16,6 +16,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from database import Database
+from playback import create_playback_router
+from xifan import SourceError, XifanSource
 
 BACKEND_ROOT = Path(__file__).resolve().parent
 COOKIE_NAME = "tsukimi_session"
@@ -28,7 +30,7 @@ class FavoriteList(BaseModel):
 
 
 def create_app(database_path: Path | None = None, catalog_path: Path | None = None,
-               allowed_origins: set[str] | None = None) -> FastAPI:
+               allowed_origins: set[str] | None = None, playback_source: XifanSource | None = None) -> FastAPI:
     store = Database(database_path or Path(os.getenv("TSUKIMI_DATABASE", str(BACKEND_ROOT / "data/tsukimi.db"))))
     source = catalog_path or BACKEND_ROOT.parent / "catalog/catalog.json"
     origins = allowed_origins if allowed_origins is not None else set(
@@ -40,10 +42,19 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
     async def lifespan(application: FastAPI):
         store.initialize()
         catalog = json.loads(source.read_text(encoding="utf-8"))
-        application.state.anime_ids = {anime["id"] for anime in catalog["anime"]}
+        application.state.anime_catalog = {anime["id"]: anime for anime in catalog["anime"]}
+        application.state.anime_ids = set(application.state.anime_catalog)
+        bindings_path = source.parent / "xifan-bindings.json"
+        application.state.xifan_bindings = json.loads(bindings_path.read_text(encoding="utf-8")) if bindings_path.exists() else {}
         yield
 
     application = FastAPI(title="Tsukimi API", version="0.1.0", lifespan=lifespan)
+
+    application.include_router(create_playback_router(playback_source or XifanSource()))
+
+    @application.exception_handler(SourceError)
+    async def unavailable_source(_request: Request, error: SourceError):
+        return JSONResponse(status_code=error.status_code, content={"detail": str(error)})
 
     @application.middleware("http")
     async def private_responses(request: Request, call_next):

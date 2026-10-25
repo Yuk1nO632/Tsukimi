@@ -16,5 +16,12 @@ export default async function WatchPage({ params, searchParams }) {
   if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) notFound();
   const selectedEpisode = Number(value);
   if (!Number.isSafeInteger(selectedEpisode) || selectedEpisode > anime.episodes) notFound();
-  return <WatchStudio anime={anime} selectedEpisode={selectedEpisode} />;
+  function optionalId(value) {
+    if (value === undefined) return null;
+    if (typeof value !== "string" || !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) notFound();
+    return Number(value);
+  }
+  const selectedSourceId = optionalId(query.source);
+  const selectedLineId = optionalId(query.line);
+  return <WatchStudio key={`${id}:${selectedEpisode}:${selectedSourceId}:${selectedLineId}`} anime={anime} selectedEpisode={selectedEpisode} selectedSourceId={selectedSourceId} selectedLineId={selectedLineId} />;
 }

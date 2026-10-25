@@ -8,5 +8,5 @@ export const metadata = {
   icons: { icon: "data:," },
 };
 export default function RootLayout({ children }) {
-  return <html lang="zh-CN"><body><CollectionProvider><SiteHeader /><CollectionStatus /><main>{children}</main><CollectionFeedback /><footer className="site-footer content-shell"><Link className="footer-brand" href="/">☾ Tsukimi<span>下一集，继续喜欢。</span></Link><div><a href="https://bgm.tv" target="_blank" rel="noreferrer">番剧资料来自 Bangumi ↗</a><span>视频来源尚未接入 · 本地开发版</span></div><Link href="/#library">发现更多故事 ↑</Link></footer></CollectionProvider></body></html>;
+  return <html lang="zh-CN"><body><CollectionProvider><SiteHeader /><CollectionStatus /><main>{children}</main><CollectionFeedback /><footer className="site-footer content-shell"><Link className="footer-brand" href="/">☾ Tsukimi<span>下一集，继续喜欢。</span></Link><div><a href="https://bgm.tv" target="_blank" rel="noreferrer">番剧资料来自 Bangumi ↗</a><span>稀饭动漫 · 单源播放验证阶段</span></div><Link href="/#library">发现更多故事 ↑</Link></footer></CollectionProvider></body></html>;
 }
