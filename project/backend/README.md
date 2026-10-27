@@ -56,4 +56,17 @@ xifan.py 请求稀饭 Next 的公开搜索、选集和临时播放地址接口�
 
 默认匹配保存在 ../catalog/xifan-bindings.json，目前仅预置芙莉莲对应来源条目 26。其余作品由界面搜索和人工确认；query source 是来源作品 ID，不是 Bangumi ID。
 
-当前测试共 18 项，来源相关测试使用 MockTransport，无需访问上游。真实端到端播放还需网络，详见根目录 docs/06-真实播放器与稀饭来源.md。
+当前测试共 29 项，来源相关测试使用 MockTransport，无需访问上游。真实端到端播放还需网络，详见根目录 docs/06-真实播放器与稀饭来源.md。
+
+## 联网资料与片单状态（2026-10-27）
+
+- GET /api/catalog：q、year、season、genre、sort、page、limit；搜索仅查询动画，排序为 match/heat/score/rank。
+- GET /api/catalog/{anime_id}：读取完整详情，可从带提示的缓存回退；不是仅允许原来九个 ID。
+- GET /api/catalog/calendar：当前每周放送计划，星期与追番筛选由前端执行，不保证来源已上架新一集。
+- GET /api/collection：建立/读取原匿名会话，返回 items，其中含 anime、status、updated_at。
+- PUT /api/collection/{anime_id}：JSON 为 {"status":"wish"}，允许 wish/watching/completed。
+- DELETE /api/collection/{anime_id}：移出片单，返回更新后的完整片单。
+
+旧 favorites 表增加 status 与 updated_at，既有收藏默认 wish；catalog_cache 存公开资料快照，片单重启后不依赖进程内目录。旧接口保持兼容，其 PUT 不会覆盖已经设置的追番状态。非法状态 422、失效会话 401、跨来源写入 403、资料不存在 404、数据库故障 503。
+
+catalog.py 使用固定 Bangumi 主机、公开只读接口、超时与有限大小的上游响应缓存。搜索/日历响应缓存约 10 分钟；详情快照约 24 小时，错误回退明确提示。临时视频 URL 不进入资料缓存或数据库。测试使用临时数据库和模拟上游；当前 TestClient 的弃用提示保持原状，不为本轮改动替换测试依赖。

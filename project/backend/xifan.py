@@ -81,7 +81,9 @@ class XifanSource:
         common = {"provider": "xifan", "source_anime_id": source_anime_id,
                   "source_title": detail["anime"].get("title", ""),
                   "line_id": line["id"], "line_name": line.get("name", "稀饭动漫"),
-                  "lines": [{"id": item["id"], "name": item.get("name", "播放线路")} for item in lines]}
+                  "lines": [{"id": item["id"], "name": item.get("name", "播放线路")} for item in lines],
+                  "episode_count": max((item["episode_number"] for item in line["episodes"] if isinstance(item, dict)
+                      and item.get("kind") == "main" and isinstance(item.get("episode_number"), int) and item["episode_number"] > 0), default=0)}
         if episode is None:
             return {**common, "status": "unavailable", "message": "这条线路暂未提供这一集，可以切换线路或重新匹配来源。"}
         data = self._post("/functions/v1/issue-web-playback", {

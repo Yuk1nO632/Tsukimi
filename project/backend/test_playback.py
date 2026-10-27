@@ -52,6 +52,7 @@ class PlaybackTests(unittest.TestCase):
             self.assertEqual(data["status"],"ready")
             self.assertEqual(data["source_anime_id"],26)
             self.assertEqual(data["source_episode_id"],329)
+            self.assertEqual(data["episode_count"],2)
             self.assertEqual(self.requests[-1][1],{"action":"fallback","episode_id":329,"source_id":5})
             self.assertEqual(response.headers["cache-control"],"no-store")
 

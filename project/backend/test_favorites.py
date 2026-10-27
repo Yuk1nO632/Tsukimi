@@ -8,6 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+import httpx
+from catalog import BangumiClient
 
 from main import COOKIE_NAME, create_app
 
@@ -21,7 +23,7 @@ class FavoritesTests(unittest.TestCase):
         self.database = Path(directory) / "test.db"
 
     def client(self):
-        return TestClient(create_app(database_path=self.database))
+        return TestClient(create_app(database_path=self.database, metadata_source=BangumiClient(transport=httpx.MockTransport(lambda request: httpx.Response(404)))))
 
     def initialize(self, client):
         response = client.get("/api/favorites")

@@ -19,10 +19,8 @@ def create_playback_router(provider: XifanSource):
     def playback(anime_id: str, request: Request, episode: int = Query(default=1, ge=1),
                  source_anime_id: int | None = Query(default=None, ge=1),
                  line_id: int | None = Query(default=None, ge=1)):
-        anime = request.app.state.anime_catalog.get(anime_id)
-        if anime is None:
-            raise HTTPException(status_code=404, detail="这部番剧尚未收录。")
-        if episode > anime["episodes"]:
+        anime = request.app.state.catalog.get(anime_id)
+        if anime["episodes"] > 0 and episode > anime["episodes"]:
             raise HTTPException(status_code=404, detail="这部番剧没有所选集数。")
         source_id = source_anime_id or request.app.state.xifan_bindings.get(anime_id)
         if source_id is None:

@@ -1,4 +1,4 @@
-"""Tsukimi's first backend: anonymous browser sessions and persistent favorites."""
+"""Anonymous collections, public anime metadata and single-source playback."""
 
 from contextlib import asynccontextmanager
 import hashlib
@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Literal
 import re
 import secrets
 import sqlite3
@@ -16,6 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from database import Database
+from catalog import BangumiClient, Catalog, CatalogError, create_catalog_router
 from playback import create_playback_router
 from xifan import SourceError, XifanSource
 
@@ -29,8 +31,12 @@ class FavoriteList(BaseModel):
     favorite_ids: list[str]
 
 
+class CollectionUpdate(BaseModel):
+    status: Literal["wish", "watching", "completed"]
+
+
 def create_app(database_path: Path | None = None, catalog_path: Path | None = None,
-               allowed_origins: set[str] | None = None, playback_source: XifanSource | None = None) -> FastAPI:
+               allowed_origins: set[str] | None = None, playback_source: XifanSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
     store = Database(database_path or Path(os.getenv("TSUKIMI_DATABASE", str(BACKEND_ROOT / "data/tsukimi.db"))))
     source = catalog_path or BACKEND_ROOT.parent / "catalog/catalog.json"
     origins = allowed_origins if allowed_origins is not None else set(
@@ -44,13 +50,21 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         catalog = json.loads(source.read_text(encoding="utf-8"))
         application.state.anime_catalog = {anime["id"]: anime for anime in catalog["anime"]}
         application.state.anime_ids = set(application.state.anime_catalog)
+        for anime in catalog["anime"]:
+            store.cache_anime(anime, 0, seed=True)
+        application.state.catalog = Catalog(store, metadata_source or BangumiClient())
         bindings_path = source.parent / "xifan-bindings.json"
         application.state.xifan_bindings = json.loads(bindings_path.read_text(encoding="utf-8")) if bindings_path.exists() else {}
         yield
 
-    application = FastAPI(title="Tsukimi API", version="0.1.0", lifespan=lifespan)
+    application = FastAPI(title="Tsukimi API", version="0.4.0", lifespan=lifespan)
 
     application.include_router(create_playback_router(playback_source or XifanSource()))
+    application.include_router(create_catalog_router())
+
+    @application.exception_handler(CatalogError)
+    async def unavailable_catalog(_request: Request, error: CatalogError):
+        return JSONResponse(status_code=error.status_code, content={"detail": str(error)})
 
     @application.exception_handler(SourceError)
     async def unavailable_source(_request: Request, error: SourceError):
@@ -70,7 +84,7 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
     @application.exception_handler(sqlite3.Error)
     async def unavailable_database(_request: Request, exception: sqlite3.Error):
         logger.error("SQLite operation failed: %s", type(exception).__name__)
-        return JSONResponse(status_code=503, content={"detail": "收藏暂时无法读取或保存，请稍后重试。"})
+        return JSONResponse(status_code=503, content={"detail": "追番记录暂时无法读取或保存，请稍后重试。"})
 
     def current_session(request: Request) -> str | None:
         token = request.cookies.get(COOKIE_NAME, "")
@@ -86,15 +100,9 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         return session_id
 
     def favorites(session_id: str) -> FavoriteList:
-        # A removed catalog item can stay in the DB but is hidden until it is available again.
-        return FavoriteList(favorite_ids=[item for item in store.list_favorites(session_id) if item in application.state.anime_ids])
+        return FavoriteList(favorite_ids=store.list_favorites(session_id))
 
-    @application.get("/api/health")
-    def health():
-        return {"status": "ok"}
-
-    @application.get("/api/favorites", response_model=FavoriteList)
-    def read_favorites(request: Request, response: Response):
+    def ensure_session(request: Request, response: Response):
         session_id = current_session(request)
         if session_id is None:
             token = secrets.token_urlsafe(32)
@@ -102,20 +110,47 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
             store.create_session(session_id, int(time.time()) + SESSION_SECONDS)
             response.set_cookie(COOKIE_NAME, token, max_age=SESSION_SECONDS, httponly=True,
                                 secure=secure_cookie, samesite="lax", path="/api")
-        return favorites(session_id)
+        return session_id
+
+    @application.get("/api/health")
+    def health():
+        return {"status": "ok"}
+
+    @application.get("/api/favorites", response_model=FavoriteList)
+    def read_favorites(request: Request, response: Response):
+        return favorites(ensure_session(request, response))
+
+    def collection(session_id):
+        return {"items": store.list_collection(session_id)}
+
+    @application.get("/api/collection")
+    def read_collection(request: Request, response: Response):
+        return collection(ensure_session(request, response))
+
+    @application.put("/api/collection/{anime_id}")
+    def update_collection(anime_id: str, payload: CollectionUpdate, request: Request):
+        session_id = require_session(request)
+        application.state.catalog.get(anime_id)
+        store.set_collection_status(session_id, anime_id, payload.status)
+        return collection(session_id)
+
+    @application.delete("/api/collection/{anime_id}")
+    def delete_collection(anime_id: str, request: Request):
+        session_id = require_session(request)
+        store.set_favorite(session_id, anime_id, saved=False)
+        return collection(session_id)
 
     @application.put("/api/favorites/{anime_id}", response_model=FavoriteList)
     def save_favorite(anime_id: str, request: Request):
         session_id = require_session(request)
-        if anime_id not in application.state.anime_ids:
-            raise HTTPException(status_code=404, detail="这部番剧尚未收录。")
+        application.state.catalog.get(anime_id)
         store.set_favorite(session_id, anime_id, saved=True)
         return favorites(session_id)
 
     @application.delete("/api/favorites/{anime_id}", response_model=FavoriteList)
     def remove_favorite(anime_id: str, request: Request):
         session_id = require_session(request)
-        if anime_id not in application.state.anime_ids:
+        if not store.cached_anime(anime_id):
             raise HTTPException(status_code=404, detail="这部番剧尚未收录。")
         store.set_favorite(session_id, anime_id, saved=False)
         return favorites(session_id)
