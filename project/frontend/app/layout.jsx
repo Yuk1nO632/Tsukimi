@@ -1,6 +1,6 @@
 import "./globals.css";
 import Link from "next/link";
-import { Suspense } from "react";
+
 import SiteHeader from "../components/site-header";
 import {
   CollectionFeedback,
@@ -17,9 +17,7 @@ export default function RootLayout({ children }) {
     <html lang="zh-CN" data-scroll-behavior="smooth">
       <body>
         <CollectionProvider>
-          <Suspense fallback={<div className="site-header" />}>
-            <SiteHeader />
-          </Suspense>
+          <SiteHeader />
           <CollectionStatus />
           <main>{children}</main>
           <CollectionFeedback />

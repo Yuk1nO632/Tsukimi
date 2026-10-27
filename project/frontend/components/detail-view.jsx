@@ -1,31 +1,26 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+
 import { useState } from "react";
 import FavoriteButton from "./favorite-button";
 import { CollectionStatusPicker } from "./collection-provider";
-import SourceMatcher from "./source-matcher";
 
 export default function DetailView({ anime, initialSource }) {
-  const [selectedSource, setSelectedSource] = useState(initialSource);
-  const [picked, setPicked] = useState(null);
   const [group, setGroup] = useState(0);
   const [expanded, setExpanded] = useState(false);
-  const router = useRouter();
-  const count = anime.episodes || picked?.episodes || 1;
+
+  const count = anime.episodes || 1;
   function watch(episode = 1) {
-    return `/watch/${anime.id}?episode=${episode}${selectedSource ? `&source=${selectedSource}` : ""}`;
+    return `/watch/${anime.id}?episode=${episode}${initialSource ? `&source=${initialSource}` : ""}`;
   }
-  function choose(id, item) {
-    setSelectedSource(id);
-    setPicked(item);
-    router.replace(`/anime/${anime.id}?source=${id}`, { scroll: false });
-  }
+
   return (
     <div className="content-shell portal-detail">
       <nav className="breadcrumbs" aria-label="当前位置">
-        <Link href="/browse">番剧索引</Link>
+        <Link prefetch={false} href="/browse">
+          番剧索引
+        </Link>
         <span>›</span>
         <strong>{anime.title}</strong>
       </nav>
@@ -55,14 +50,18 @@ export default function DetailView({ anime, initialSource }) {
           <p className="series-original">{anime.originalTitle}</p>
           <div className="detail-tags">
             {anime.tags?.slice(0, 8).map((tag) => (
-              <Link key={tag} href={`/browse?genre=${encodeURIComponent(tag)}`}>
+              <Link
+                prefetch={false}
+                key={tag}
+                href={`/browse?genre=${encodeURIComponent(tag)}`}
+              >
                 {tag}
               </Link>
             ))}
           </div>
           <p className="series-description">{anime.description}</p>
           <div className="series-actions">
-            <Link className="solid-button" href={watch()}>
+            <Link prefetch={false} className="solid-button" href={watch()}>
               前往播放 →
             </Link>
             <CollectionStatusPicker anime={anime} />
@@ -131,7 +130,7 @@ export default function DetailView({ anime, initialSource }) {
                 { length: Math.max(0, Math.min(50, count - group * 50)) },
                 (_, i) => group * 50 + i + 1,
               ).map((episode) => (
-                <Link key={episode} href={watch(episode)}>
+                <Link prefetch={false} key={episode} href={watch(episode)}>
                   第 {String(episode).padStart(2, "0")} 集<span>▷</span>
                 </Link>
               ))}
@@ -165,36 +164,6 @@ export default function DetailView({ anime, initialSource }) {
             </dl>
           </section>
         </div>
-        <aside
-          className="detail-source-panel"
-          aria-labelledby="detail-source-title"
-        >
-          <div className="portal-section-heading">
-            <div>
-              <h2 id="detail-source-title">播放来源</h2>
-              <span>稀饭动漫</span>
-            </div>
-          </div>
-          <p>先核对季数和年份，再选择对应作品。</p>
-          <SourceMatcher
-            title={anime.title}
-            selectedId={selectedSource}
-            onSelect={choose}
-          />
-          {selectedSource ? (
-            <div className="detail-selected-source">
-              <span>已选择来源</span>
-              <strong>{picked?.title || "稀饭动漫对应作品"}</strong>
-              <Link className="solid-button" href={watch()}>
-                播放第 1 集 →
-              </Link>
-            </div>
-          ) : (
-            <p className="detail-source-prompt">
-              尚未匹配来源，也可进入播放页继续选择。
-            </p>
-          )}
-        </aside>
       </div>
     </div>
   );

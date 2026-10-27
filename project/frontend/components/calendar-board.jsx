@@ -101,7 +101,7 @@ export default function CalendarBoard({ compact = false }) {
                   </div>
                   <div className="schedule-grid">
                     {(compact ? items.slice(0, 6) : items).map((anime) => (
-                      <Link
+                      <Link prefetch={false}
                         className="schedule-card"
                         key={anime.id}
                         href={`/anime/${anime.id}`}
@@ -135,7 +135,7 @@ export default function CalendarBoard({ compact = false }) {
           </div>
           <p className="calendar-disclaimer">
             {data.note}{" "}
-            {compact && <Link href="/calendar">查看完整日历 →</Link>}
+            {compact && <Link prefetch={false} href="/calendar">查看完整日历 →</Link>}
           </p>
         </>
       )}

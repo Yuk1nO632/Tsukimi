@@ -157,12 +157,12 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     if (document.fullscreenElement === frameRef.current) await document.exitFullscreen().catch(() => {});
     onFindSource?.();
   }
-  const heading = videoError ? "暂时无法播放这一集" : media.status === "loading" ? "正在连接故事的入口" : media.status === "unmatched" ? "先为这部番找到播放来源" : "来源暂时没有准备好";
+  const heading = videoError ? "暂时无法播放这一集" : media.status === "loading" ? "正在匹配并加载来源" : media.status === "unmatched" ? "先为这部番找到播放来源" : "来源暂时没有准备好";
   const percent = duration ? Math.min(100, currentTime / duration * 100) : 0;
 
   return <div className={`player-frame${controlsVisible ? " controls-visible" : " controls-hidden"}`} ref={frameRef} tabIndex={0} role="region" aria-label={`${label}播放器，空格播放暂停，方向键快进或调节音量，F 全屏`} onKeyDown={onKeyDown} onPointerMove={revealControls} onPointerDown={(event) => { touchReveal.current = event.pointerType === "touch" && !controlsVisible && event.target === videoRef.current; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }}>
     <div className="player-canvas" onClick={clickCanvas} onDoubleClick={(event) => { if (event.target === videoRef.current || event.target === event.currentTarget) { window.clearTimeout(clickTimer.current); fullscreen(); } }}>
-      {available && <video ref={videoRef} className="actual-video" preload="metadata" playsInline poster={poster} src={media.format === "hls" ? undefined : media.url} aria-label={label}
+      {available && <video ref={videoRef} className="actual-video" preload="metadata" autoPlay={!media.isTest} playsInline poster={poster} src={media.format === "hls" ? undefined : media.url} aria-label={label}
         onLoadedMetadata={(event) => { setDuration(event.currentTarget.duration); setVideoError(""); }}
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}

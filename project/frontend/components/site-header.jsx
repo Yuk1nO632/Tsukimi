@@ -1,26 +1,15 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+
 import { useCollection } from "./collection-provider";
-import PlayerIcon from "./player-icon";
+import HeaderSearch from "./header-search";
+import { Suspense } from "react";
 
 export default function SiteHeader() {
   const { favoriteIds, status } = useCollection();
-  const params = useSearchParams();
-  const queryInUrl = params.get("q") || "";
-  const [query, setQuery] = useState(queryInUrl);
-  const router = useRouter();
+
   const pathname = usePathname();
-  useEffect(() => setQuery(queryInUrl), [queryInUrl]);
-  function search(event) {
-    event.preventDefault();
-    router.push(
-      query.trim()
-        ? `/search?q=${encodeURIComponent(query.trim())}`
-        : "/browse",
-    );
-  }
   const links = [
     ["/", "首页"],
     ["/browse", "番剧索引"],
@@ -51,19 +40,17 @@ export default function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <form className="header-search" role="search" onSubmit={search}>
-          <input
-            name="q"
-            aria-label="搜索番剧资料"
-            maxLength={100}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索番名、原名或别名"
-          />
-          <button type="submit" aria-label="搜索番剧">
-            <PlayerIcon name="search" size={19} />
-          </button>
-        </form>
+        <Suspense
+          fallback={
+            <div
+              className="header-search"
+              style={{ height: 42 }}
+              aria-hidden="true"
+            />
+          }
+        >
+          <HeaderSearch />
+        </Suspense>
         <Link
           className="saved-indicator"
           href="/collection"

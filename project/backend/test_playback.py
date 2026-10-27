@@ -67,7 +67,8 @@ class PlaybackTests(unittest.TestCase):
         with self.client() as client:
             response=client.get("/api/playback/bgm-568244")
             self.assertEqual(response.json()["status"],"unmatched")
-            self.assertEqual(self.requests,[])
+            self.assertTrue(self.requests)
+            self.assertTrue(all(path.endswith("search_animes") for path, _ in self.requests))
 
     def test_invalid_episode_source_and_unknown_catalog_are_rejected(self):
         with self.client() as client:

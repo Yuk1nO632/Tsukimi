@@ -1,14 +1,20 @@
 "use client";
 import { useEffect, useState } from "react";
-import { requestJson } from "./api";
+import { cachedPublic, forgetPublic, readPublic } from "./public-cache";
 
 export default function useApi(path) {
   const [attempt, setAttempt] = useState(0);
-  const [result, setResult] = useState({ path: "", data: null, error: "" });
+  const [result, setResult] = useState(() => ({
+    path,
+    data: cachedPublic(path),
+    error: "",
+  }));
   useEffect(() => {
     const controller = new AbortController();
-    setResult({ path, data: null, error: "" });
-    requestJson(path, { signal: controller.signal })
+    const cached = cachedPublic(path);
+    setResult({ path, data: cached, error: "" });
+    if (cached) return () => controller.abort();
+    readPublic(path, { signal: controller.signal })
       .then((data) => {
         if (!controller.signal.aborted) setResult({ path, data, error: "" });
       })
@@ -18,10 +24,14 @@ export default function useApi(path) {
       });
     return () => controller.abort();
   }, [path, attempt]);
-  const current = result.path === path ? result : { data: null, error: "" };
+  const current =
+    result.path === path ? result : { data: cachedPublic(path), error: "" };
   return {
     ...current,
     loading: !current.data && !current.error,
-    retry: () => setAttempt((value) => value + 1),
+    retry: () => {
+      forgetPublic(path);
+      setAttempt((value) => value + 1);
+    },
   };
 }

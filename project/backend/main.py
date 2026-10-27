@@ -38,6 +38,8 @@ class CollectionUpdate(BaseModel):
 def create_app(database_path: Path | None = None, catalog_path: Path | None = None,
                allowed_origins: set[str] | None = None, playback_source: XifanSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
     store = Database(database_path or Path(os.getenv("TSUKIMI_DATABASE", str(BACKEND_ROOT / "data/tsukimi.db"))))
+    metadata_provider = metadata_source or BangumiClient()
+    playback_provider = playback_source or XifanSource()
     source = catalog_path or BACKEND_ROOT.parent / "catalog/catalog.json"
     origins = allowed_origins if allowed_origins is not None else set(
         os.getenv("TSUKIMI_ALLOWED_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8000,http://localhost:8000").split(",")
@@ -52,14 +54,19 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         application.state.anime_ids = set(application.state.anime_catalog)
         for anime in catalog["anime"]:
             store.cache_anime(anime, 0, seed=True)
-        application.state.catalog = Catalog(store, metadata_source or BangumiClient())
+        application.state.catalog = Catalog(store, metadata_provider)
         bindings_path = source.parent / "xifan-bindings.json"
         application.state.xifan_bindings = json.loads(bindings_path.read_text(encoding="utf-8")) if bindings_path.exists() else {}
-        yield
+        application.state.store = store
+        try:
+            yield
+        finally:
+            metadata_provider.close()
+            playback_provider.close()
 
     application = FastAPI(title="Tsukimi API", version="0.4.0", lifespan=lifespan)
 
-    application.include_router(create_playback_router(playback_source or XifanSource()))
+
     application.include_router(create_catalog_router())
 
     @application.exception_handler(CatalogError)
@@ -155,6 +162,7 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         store.set_favorite(session_id, anime_id, saved=False)
         return favorites(session_id)
 
+    application.include_router(create_playback_router(playback_provider, current_session, require_session))
     return application
 
 

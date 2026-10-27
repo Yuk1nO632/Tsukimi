@@ -22,35 +22,59 @@ class XifanSource:
     def __init__(self, transport=None):
         self.transport = transport
         self._details = {}
+        self._searches = {}
+        self._client = None
         self._lock = Lock()
+
+    def close(self):
+        with self._lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+
+    def http_client(self):
+        with self._lock:
+            if self._client is None:
+                self._client = httpx.Client(timeout=12, transport=self.transport)
+            return self._client
 
     def _post(self, path, body):
         key = os.getenv("TSUKIMI_XIFAN_PUBLIC_KEY", PUBLIC_KEY)
         try:
-            with httpx.Client(timeout=12, transport=self.transport) as client:
-                response = client.post(API_ROOT + path, json=body, headers={
-                    "apikey": key, "Authorization": f"Bearer {key}",
-                    "User-Agent": "Tsukimi/0.3 (personal fullstack study project)",
-                })
-                if response.status_code == 429:
-                    raise SourceError("来源请求较多，请稍后重试。", 503)
-                response.raise_for_status()
-                return response.json()
+            response = self.http_client().post(API_ROOT + path, json=body, headers={
+                "apikey": key, "Authorization": f"Bearer {key}",
+                "User-Agent": "Tsukimi/0.3 (personal fullstack study project)",
+            })
+            if response.status_code == 404:
+                raise SourceError("来源作品或资源已不存在，请重新匹配。", 404)
+            if response.status_code == 429:
+                raise SourceError("来源请求较多，请稍后重试。", 503)
+            response.raise_for_status()
+            return response.json()
         except httpx.TimeoutException as error:
             raise SourceError("稀饭动漫响应超时，请稍后重试。", 504) from error
         except (httpx.HTTPError, ValueError) as error:
             raise SourceError("暂时无法读取稀饭动漫，请稍后重试。") from error
 
     def search(self, query):
+        with self._lock:
+            cached = self._searches.get(query)
+        if cached and time.monotonic() - cached[0] < 600:
+            return cached[1]
         data = self._post("/rest/v1/rpc/search_animes", {
             "search_term": query, "page_number": 1, "items_per_page": 12,
         })
         if not isinstance(data, list):
             raise SourceError("来源搜索返回了无法识别的资料。")
-        return [{"id": item["id"], "title": str(item.get("title", "")),
+        items = [{"id": item["id"], "title": str(item.get("title", "")),
                  "year": str(item.get("release_year") or ""),
                  "episodes": item.get("total_episodes") or 0}
                 for item in data[:12] if isinstance(item, dict) and isinstance(item.get("id"), int) and item["id"] > 0]
+        with self._lock:
+            if len(self._searches) >= 64:
+                self._searches.pop(next(iter(self._searches)))
+            self._searches[query] = (time.monotonic(), items)
+        return items
 
     def detail(self, source_anime_id):
         with self._lock:
@@ -72,7 +96,11 @@ class XifanSource:
         detail = self.detail(source_anime_id)
         lines = [line for line in detail["sources"] if isinstance(line, dict)
                  and isinstance(line.get("id"), int) and line["id"] > 0 and isinstance(line.get("episodes"), list)]
-        line = next((line for line in lines if line_id is None or line["id"] == line_id), None)
+        if line_id is None:
+            line = next((line for line in lines if any(isinstance(item, dict) and item.get("kind") == "main"
+                and item.get("episode_number") == episode_number for item in line["episodes"])), lines[0] if lines else None)
+        else:
+            line = next((line for line in lines if line["id"] == line_id), None)
         if line is None:
             raise SourceError("所选线路暂时不可用。", 404)
         # Match the episode's number, not its position; specials must not shift the main episodes.

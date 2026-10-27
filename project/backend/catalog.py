@@ -76,6 +76,19 @@ class BangumiClient:
         self.transport = transport
         self.cache = {}
         self.lock = Lock()
+        self._client = None
+
+    def close(self):
+        with self.lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+
+    def http_client(self):
+        with self.lock:
+            if self._client is None:
+                self._client = httpx.Client(timeout=15, transport=self.transport)
+            return self._client
 
     def request(self, method, path, body=None):
         key = (method, path, json.dumps(body, sort_keys=True))
@@ -84,15 +97,14 @@ class BangumiClient:
         if cached and time.monotonic() - cached[0] < 600:
             return cached[1]
         try:
-            with httpx.Client(timeout=15, transport=self.transport) as client:
-                response = client.request(method, "https://api.bgm.tv" + path, json=body,
-                    headers={"User-Agent": "Tsukimi/0.4 (personal fullstack study project)", "Accept": "application/json"})
-                if response.status_code == 404:
-                    raise CatalogError("未找到这部番剧。", 404)
-                if response.status_code == 429:
-                    raise CatalogError("资料服务请求较多，请稍后重试。", 503)
-                response.raise_for_status()
-                data = json.loads(response.content)
+            response = self.http_client().request(method, "https://api.bgm.tv" + path, json=body,
+                headers={"User-Agent": "Tsukimi/0.4 (personal fullstack study project)", "Accept": "application/json"})
+            if response.status_code == 404:
+                raise CatalogError("未找到这部番剧。", 404)
+            if response.status_code == 429:
+                raise CatalogError("资料服务请求较多，请稍后重试。", 503)
+            response.raise_for_status()
+            data = json.loads(response.content)
         except httpx.TimeoutException as error:
             raise CatalogError("番剧资料查询超时，请重试。", 504) from error
         except (httpx.HTTPError, ValueError) as error:
@@ -146,10 +158,11 @@ class Catalog:
         items = []
         for subject in raw["data"]:
             try:
-                items.append(self.remember(normalize(subject)))
+                items.append(normalize(subject))
             except CatalogError as error:
                 if error.status_code != 404:
                     raise
+        self.store.cache_animes(items, int(time.time()))
         return {"items": items, "total": int(raw.get("total") or 0), "page": page, "limit": limit, "provider": "Bangumi"}
 
     def calendar(self):

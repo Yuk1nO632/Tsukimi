@@ -56,10 +56,10 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
           <h1>{active.title}</h1>
           <div className="season-facts"><span>{active.releaseDate} 首播</span><span>{active.category}</span></div>
           <p className="season-description">{active.description}</p>
-          <div className="hero-actions"><Link className="primary-link" href={`/anime/${active.id}`}>查看番剧 <span aria-hidden="true">↗</span></Link><Link className="hero-secondary" href="/collection">我的追番</Link></div>
+          <div className="hero-actions"><Link prefetch={false} className="primary-link" href={`/anime/${active.id}`}>查看番剧 <span aria-hidden="true">↗</span></Link><Link prefetch={false} className="hero-secondary" href="/collection">我的追番</Link></div>
           <a className="season-source" href={active.sourceUrl} target="_blank" rel="noreferrer">资料与海报来源：Bangumi ↗</a>
         </div>
-        <Link className="season-keyvisual" href={`/anime/${active.id}`} aria-label={`查看《${active.title}》详情`}>
+        <Link prefetch={false} className="season-keyvisual" href={`/anime/${active.id}`} aria-label={`查看《${active.title}》详情`}>
           <Image key={active.id} src={active.cover} alt={`${active.title} 海报`} fill loading="eager" fetchPriority="high" sizes="(max-width: 600px) 38vw, 300px" />
         </Link>
       </div>

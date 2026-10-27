@@ -38,21 +38,21 @@ export default function HomeDashboard() {
       )}
       <div className="content-shell home-portal">
         <nav className="home-shortcuts" aria-label="频道入口">
-          <Link href={seasonUrl}>
+          <Link prefetch={false} href={seasonUrl}>
             <strong>本季新番</strong>
             <span>
               {year} 年 {season * 3 - 2} 月 →
             </span>
           </Link>
-          <Link href="/browse">
+          <Link prefetch={false} href="/browse">
             <strong>番剧索引</strong>
             <span>年份 · 季度 · 类型 →</span>
           </Link>
-          <Link href="/calendar">
+          <Link prefetch={false} href="/calendar">
             <strong>放送日历</strong>
             <span>每周放送安排 →</span>
           </Link>
-          <Link href="/collection">
+          <Link prefetch={false} href="/collection">
             <strong>我的追番</strong>
             <span>
               {status === "ready"
@@ -68,7 +68,7 @@ export default function HomeDashboard() {
               <h2 id="home-season-title">本季新番</h2>
               <span>按 Bangumi 收藏热度排序</span>
             </div>
-            <Link href={seasonUrl}>查看全部 →</Link>
+            <Link prefetch={false} href={seasonUrl}>查看全部 →</Link>
           </div>
           {loading ? (
             <SkeletonGrid count={6} />
@@ -91,7 +91,7 @@ export default function HomeDashboard() {
               <h2 id="home-collection-title">我的追番</h2>
               <span>想看、在看、看完，统一管理</span>
             </div>
-            <Link href="/collection">管理片单 →</Link>
+            <Link prefetch={false} href="/collection">管理片单 →</Link>
           </div>
           {status !== "ready" ? (
             <p className="home-inline-note">
@@ -102,7 +102,7 @@ export default function HomeDashboard() {
           ) : collectionItems.length ? (
             <div className="home-saved-list">
               {collectionItems.slice(0, 4).map(({ anime, status }) => (
-                <Link key={anime.id} href={`/anime/${anime.id}`}>
+                <Link prefetch={false} key={anime.id} href={`/anime/${anime.id}`}>
                   <span className="home-saved-cover">
                     <Image src={anime.cover} alt="" fill sizes="58px" />
                   </span>
@@ -117,7 +117,7 @@ export default function HomeDashboard() {
           ) : (
             <div className="home-empty-collection">
               <p>尚未添加番剧。在详情页选择追番状态，即可加入片单。</p>
-              <Link href="/browse">添加番剧 ＋</Link>
+              <Link prefetch={false} href="/browse">添加番剧 ＋</Link>
             </div>
           )}
         </section>
@@ -127,7 +127,7 @@ export default function HomeDashboard() {
               <h2>放送日历</h2>
               <span>当前在播动画</span>
             </div>
-            <Link href="/calendar">完整日历 →</Link>
+            <Link prefetch={false} href="/calendar">完整日历 →</Link>
           </div>
           <CalendarBoard compact />
         </section>
@@ -137,7 +137,7 @@ export default function HomeDashboard() {
               <h2>经典回看</h2>
               <span>已收录的完结作品</span>
             </div>
-            <Link href="/browse?sort=rank">更多高分番剧 →</Link>
+            <Link prefetch={false} href="/browse?sort=rank">更多高分番剧 →</Link>
           </div>
           <div className="anime-grid portal-grid">
             {classics.map((anime) => (

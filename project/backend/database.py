@@ -33,6 +33,14 @@ class Database:
                     status TEXT NOT NULL DEFAULT 'wish', updated_at INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (session_id, anime_id)
                 );
+                CREATE TABLE IF NOT EXISTS source_bindings (
+                    session_id TEXT NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
+                    anime_id TEXT NOT NULL, source_id INTEGER NOT NULL,
+                    PRIMARY KEY (session_id, anime_id)
+                );
+                CREATE TABLE IF NOT EXISTS auto_source_bindings (
+                    anime_id TEXT PRIMARY KEY, source_id INTEGER NOT NULL, matched_at INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS catalog_cache (
                     anime_id TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at INTEGER NOT NULL
                 );
@@ -94,3 +102,31 @@ class Database:
         with self.connect() as connection:
             row = connection.execute("SELECT data, fetched_at FROM catalog_cache WHERE anime_id = ?", (anime_id,)).fetchone()
         return (json.loads(row[0]), row[1]) if row else None
+
+    def cache_animes(self, items, fetched_at):
+        with self.connect() as connection:
+            connection.executemany("""INSERT INTO catalog_cache VALUES (?, ?, ?)
+                ON CONFLICT(anime_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at""",
+                [(anime["id"], json.dumps(anime, ensure_ascii=False), fetched_at) for anime in items])
+
+    def source_binding(self, anime_id, session_id=None):
+        with self.connect() as connection:
+            if session_id:
+                saved = connection.execute("SELECT source_id FROM source_bindings WHERE session_id = ? AND anime_id = ?", (session_id, anime_id)).fetchone()
+                if saved:
+                    return saved[0], "saved"
+            cached = connection.execute("SELECT source_id FROM auto_source_bindings WHERE anime_id = ? AND matched_at > ?", (anime_id, int(time.time()) - 86400)).fetchone()
+        return (cached[0], "automatic") if cached else (None, None)
+
+    def save_source_binding(self, anime_id, source_id, session_id=None):
+        with self.connect() as connection:
+            if session_id:
+                connection.execute("""INSERT INTO source_bindings VALUES (?, ?, ?)
+                    ON CONFLICT(session_id, anime_id) DO UPDATE SET source_id = excluded.source_id""", (session_id, anime_id, source_id))
+            else:
+                connection.execute("""INSERT INTO auto_source_bindings VALUES (?, ?, ?)
+                    ON CONFLICT(anime_id) DO UPDATE SET source_id = excluded.source_id, matched_at = excluded.matched_at""", (anime_id, source_id, int(time.time())))
+
+    def forget_auto_source(self, anime_id):
+        with self.connect() as connection:
+            connection.execute("DELETE FROM auto_source_bindings WHERE anime_id = ?", (anime_id,))

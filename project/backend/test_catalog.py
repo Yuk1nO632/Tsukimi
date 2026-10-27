@@ -12,6 +12,7 @@ import unittest
 import httpx
 from fastapi.testclient import TestClient
 from catalog import BangumiClient
+from xifan import XifanSource
 from main import COOKIE_NAME, create_app
 
 SUBJECT = {"id": 10380, "type": 2, "name": "STEINS;GATE", "name_cn": "命运石之门", "date": "2011-04-06",
@@ -52,7 +53,7 @@ class CatalogCollectionTests(unittest.TestCase):
 
     def client(self):
         provider = BangumiClient(transport=httpx.MockTransport(self.handle))
-        return TestClient(create_app(database_path=self.database, metadata_source=provider))
+        return TestClient(create_app(database_path=self.database, metadata_source=provider, playback_source=XifanSource(transport=httpx.MockTransport(lambda request: httpx.Response(200,json=[])))))
 
     def test_search_outside_seed_and_filter_pagination_reaches_provider(self):
         with self.client() as client:
