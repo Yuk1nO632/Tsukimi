@@ -33,3 +33,6 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(-
 .not-found-page{text-align:center;max-width:900px;margin:auto;min-height:65vh;padding:75px 20px}.eyebrow{color:#aaa5b5;font-size:10px;letter-spacing:2px}.not-found-moon{display:block;color:#b9b3d7;font-size:80px;margin:20px 0}.not-found-page h1{font-size:30px;font-weight:550}.not-found-page p{color:#9ba1b0;font-size:13px;line-height:1.9;margin:15px 0 23px}
 
 .collection-status{display:flex;align-items:center;justify-content:center;gap:15px;flex-wrap:wrap;padding:10px 20px;background:#f3f8fc;color:#73879c;font-size:12px;line-height:1.8}.collection-status.is-error{background:#fff4f2;color:#ad645e}.collection-status button{border:1px solid #edc4bd;background:white;border-radius:5px;padding:4px 10px;color:inherit;font-size:11px}.favorite-button:disabled{opacity:.55}.favorite-button[aria-busy=true]{opacity:.8}
+
+/* Keep the local-library search distinct from playback-source search. */
+.header-search input{border-color:#dfe4ed;background:#f3f5f9;color:#46546c;transition:border-color .2s,box-shadow .2s}.header-search input:focus{border-color:#e994af;background:#fff;box-shadow:0 0 0 3px #fb729912}.header-search input::placeholder{color:#818b9d}.header-search button{color:#65748b}.header-search button:hover{color:#e96d94}
