@@ -1,6 +1,6 @@
 
 @media(max-width:1100px){
-.content-shell{width:calc(100% - 48px)}.header-inner{gap:24px}.brand-caption{display:none}.header-navigation{gap:20px}.header-search{width:240px}.anime-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}.homepage-lower{grid-template-columns:minmax(0,1fr) 270px;gap:25px}.calendar-list{gap:18px}.calendar-item{gap:9px}.calendar-cover{width:49px;height:66px}.calendar-item strong{font-size:12px}.calendar-item small{display:none}.weekday-tabs{gap:16px}
+.content-shell{width:calc(100% - 48px)}.header-inner{gap:24px}.header-navigation{gap:20px}.header-search{width:240px}.anime-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}.homepage-lower{grid-template-columns:minmax(0,1fr) 270px;gap:25px}.calendar-list{gap:18px}.calendar-item{gap:9px}.calendar-cover{width:49px;height:66px}.calendar-item strong{font-size:12px}.calendar-item small{display:none}.weekday-tabs{gap:16px}
 .watch-stage,.watch-below{grid-template-columns:minmax(0,1fr) 280px;gap:20px}.watch-sidebar{padding:15px}.watch-series-card h1{font-size:16px}.watch-series-cover{width:60px;height:82px}.watch-save-row .favorite-button{min-width:110px}.player-empty h2{font-size:18px}.player-empty{gap:8px}.player-empty-icon{width:52px;height:52px;font-size:27px}.episode-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
 }
 @media(max-width:760px){
