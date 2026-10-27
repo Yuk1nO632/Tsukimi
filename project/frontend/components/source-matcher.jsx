@@ -4,7 +4,7 @@ import { searchXifan } from "../lib/playback-api";
 import PlayerIcon from "./player-icon";
 
 export default function SourceMatcher({ title, onSelect, selectedId, inputRef }) {
-  const [query, setQuery] = useState(title);
+  const [query, setQuery] = useState(title.slice(0,80));
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -19,7 +19,7 @@ export default function SourceMatcher({ title, onSelect, selectedId, inputRef })
     setLoading(true); setError(""); setItems(null);
     try {
       const data = await searchXifan(query.trim(), controller.signal);
-      if (!controller.signal.aborted) setItems(Array.isArray(data.items) ? data.items : []);
+      if (!controller.signal.aborted) setItems(Array.isArray(data.items) ? [...data.items].sort((a,b) => Number(b.title === query.trim()) - Number(a.title === query.trim())) : []);
     } catch (error) {
       if (!controller.signal.aborted) setError(error.message || "来源搜索失败，请重试。");
     } finally {
@@ -39,6 +39,6 @@ export default function SourceMatcher({ title, onSelect, selectedId, inputRef })
       {items?.length === 0 && <p className="source-search-feedback">没有找到对应作品，换个别名试试。</p>}
       {!!items?.length && <div className="source-result-heading"><span>找到 {items.length} 个候选作品</span><button type="button" onClick={() => setItems(null)}>收起结果</button></div>}
     </div>
-    {!!items?.length && <div className="source-results" aria-label="来源搜索结果">{items.map((item) => <button key={item.id} type="button" aria-label={`使用来源：${item.title}`} aria-pressed={selectedId === item.id} onClick={() => onSelect(item.id)}><strong>{item.title}</strong><span>{item.year || "年份待确认"} · {item.episodes > 0 ? `${item.episodes} 集` : "集数待确认"}<i>{selectedId === item.id ? "当前来源 ✓" : "选择此作品 →"}</i></span></button>)}</div>}
+    {!!items?.length && <div className="source-results" aria-label="来源搜索结果">{items.map((item) => <button key={item.id} type="button" aria-label={`使用来源：${item.title}`} aria-pressed={selectedId === item.id} onClick={() => onSelect(item.id, item)}><strong>{item.title}</strong><span>{item.year || "年份待确认"} · {item.episodes > 0 ? `${item.episodes} 集` : "集数待确认"}<i>{selectedId === item.id ? "当前来源 ✓" : "选择此作品 →"}</i></span></button>)}</div>}
   </section>;
 }

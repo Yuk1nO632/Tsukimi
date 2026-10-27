@@ -1,0 +1,9 @@
+import CatalogBrowser from "../../components/catalog-browser";
+import { readCatalogParams } from "../../lib/catalog-params";
+export const metadata = { title: "搜索番剧" };
+export default async function SearchPage({ searchParams }) {
+  const params = readCatalogParams(await searchParams);
+  return (
+    <CatalogBrowser key={JSON.stringify(params)} params={params} searching />
+  );
+}

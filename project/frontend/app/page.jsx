@@ -1,8 +1,9 @@
-import FeaturedHero from "../components/featured-hero";
-import HomeLibrary from "../components/home-library";
+import { redirect } from "next/navigation";
+import HomeDashboard from "../components/home-dashboard";
 export default async function HomePage({ searchParams }) {
   const params = await searchParams;
-  const initialView = params.view === "favorites" ? "favorites" : "all";
-  const initialQuery = typeof params.q === "string" ? params.q.slice(0, 200) : "";
-  return <><FeaturedHero /><HomeLibrary key={`${initialView}:${initialQuery}`} initialView={initialView} initialQuery={initialQuery} /></>;
+  if (params.view === "favorites") redirect("/collection");
+  if (typeof params.q === "string" && params.q.trim())
+    redirect(`/search?q=${encodeURIComponent(params.q.slice(0, 100))}`);
+  return <HomeDashboard />;
 }

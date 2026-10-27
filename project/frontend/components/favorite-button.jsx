@@ -16,7 +16,7 @@ export default function FavoriteButton({ animeId, title, onToggleSuccess }) {
       aria-label={`${isPending ? "正在保存" : isFavorite ? "取消收藏" : "收藏"}《${title}》`}
       disabled={status !== "ready" || pendingId !== null}
       onClick={async () => {
-        const saved = await toggleFavorite(animeId);
+        const saved = await toggleFavorite(animeId, title);
         if (saved) onToggleSuccess?.(isFavorite);
       }}
     >
