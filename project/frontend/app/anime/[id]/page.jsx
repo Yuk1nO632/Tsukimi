@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { loadAnime } from "../../../lib/anime-server";
-import bindings from "../../../../catalog/xifan-bindings.json";
 import DetailView from "../../../components/detail-view";
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }) {
@@ -14,10 +13,11 @@ export default async function AnimeDetailPage({ params, searchParams }) {
   if (!anime) notFound();
   const query = await searchParams;
   const selected =
+    query.provider === "anich" &&
     typeof query.source === "string" &&
     /^[1-9]\d*$/.test(query.source) &&
     Number.isSafeInteger(Number(query.source))
       ? Number(query.source)
-      : bindings[id] || null;
+      : null;
   return <DetailView key={id} anime={anime} initialSource={selected} />;
 }

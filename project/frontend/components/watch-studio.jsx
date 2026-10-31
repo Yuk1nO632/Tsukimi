@@ -92,9 +92,12 @@ export default function WatchStudio({
   function episodeUrl(
     episode,
     sourceId = selectedSourceId || source.source_anime_id,
-    lineId = selectedLineId || source.line_id,
+    lineId = source.line_id || selectedLineId,
   ) {
-    const query = new URLSearchParams({ episode: String(episode) });
+    const query = new URLSearchParams({
+      episode: String(episode),
+      provider: "anich",
+    });
     if (sourceId) query.set("source", String(sourceId));
     if (lineId) query.set("line", String(lineId));
     return `/watch/${anime.id}?${query}`;
@@ -131,6 +134,16 @@ export default function WatchStudio({
     } finally {
       if (!controller.signal.aborted) setSelectingSource(false);
     }
+  }
+  function nextLine() {
+    const lines = source.lines || [];
+    if (!lines.length) return;
+    const index = lines.findIndex((line) => line.id === source.line_id);
+    const next = lines[(index + 1) % lines.length];
+    router.replace(
+      episodeUrl(selectedEpisode, source.source_anime_id, next.id),
+      { scroll: false },
+    );
   }
   function reloadSource() {
     if (!testMode) setSource({ status: "loading" });
@@ -191,6 +204,9 @@ export default function WatchStudio({
             onWide={() => setWide((previous) => !previous)}
             onRetry={reloadSource}
             onFindSource={findSource}
+            onNextLine={
+              !testMode && source.lines?.length > 1 ? nextLine : undefined
+            }
             nextHref={nextHref}
           />
           <div className="watch-now">
@@ -244,7 +260,7 @@ export default function WatchStudio({
               {testMode
                 ? "测试短片 · 非番剧正片"
                 : ready
-                  ? `稀饭动漫 · ${source.episode_title || `第 ${selectedEpisode} 集`}`
+                  ? `AniCh · ${source.episode_title || `第 ${selectedEpisode} 集`}`
                   : source.status === "loading"
                     ? "正在自动查找并加载播放来源…"
                     : "请确认对应的播放来源"}
@@ -320,7 +336,7 @@ export default function WatchStudio({
           >
             <div className="source-panel-heading">
               <h2 id="source-panel-title">
-                播放来源 <span>稀饭动漫</span>
+                播放来源 <span>AniCh</span>
               </h2>
               <span className={`source-badge${ready ? " is-ready" : ""}`}>
                 <i />

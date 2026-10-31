@@ -48,15 +48,24 @@ python -m venv .venv
 
 测试不修改个人数据库。当前依赖版本的 TestClient 会提示旧 httpx 兼容层将弃用，该提示不影响测试执行。
 
-## 稀饭动漫单源播放
+## AniCh 聚合播放（当前正式来源）
 
-playback.py 提供 GET /api/sources/xifan/search?q=关键词 与 GET /api/playback/{anime_id}?episode=1。后者可附带 source_anime_id 和 line_id 进行显式匹配与线路选择。
+- anich.py：固定聚合服务适配、作品关联核对、逐集候选过滤与线路排序。
+- anich_protocol.py：有大小/截断检查的 Protobuf wire 读取和官方公开 URL 解码规则；未知字段跳过。
+- GET /api/sources/anich/search?q=关键词：来源作品搜索；年份未核实时不伪造。
+- PUT /api/sources/anich/bindings/{anime_id}：JSON 为 {"source_anime_id":32339}，需要匿名会话与同源写入校验。
+- GET /api/playback/{anime_id}?episode=1：自动匹配、解析临时播放地址。显式选择可附 source_provider=anich、source_anime_id、line_id。
+- TSUKIMI_ANICH_API：默认 https://anich.sends.eu.org；无需配置，新终端修改后重启后端生效。
 
-xifan.py 请求稀饭 Next 的公开搜索、选集和临时播放地址接口；metadata 缓存 5 分钟，播放地址在每次解析时重新申请。视频由浏览器直接连接 CDN，后端不转发视频字节。当前只允许核对过的两个 CDN 主机。
+关联优先核对详情 sites 中的 Bangumi ID，没有映射才使用精确名称与年份/集数证据；错误映射不自动选择，人工确认也不能保存已明确关联另一作品的条目。搜索最多两次、每次核对最多四个同名候选详情。
 
-默认匹配保存在 ../catalog/xifan-bindings.json，目前仅预置芙莉莲对应来源条目 26。其余作品由界面搜索和人工确认；query source 是来源作品 ID，不是 Bangumi ID。
+SQLite 沿用 source_bindings/auto_source_bindings，以 anich:bgm-… 作为 AniCh 键；旧未加前缀的稀饭偏好保留但不读取为 AniCh。旧 URL 无 provider 标记的数字不继续当成新来源 ID。收藏、Cookie 和资料 ID 保持原状，无表迁移或数据删除。
 
-当前测试共 39 项，来源相关测试使用 MockTransport，无需访问上游。真实端到端播放还需网络，详见根目录 docs/06-真实播放器与稀饭来源.md。
+详情/剧集缓存 5 分钟、搜索 10 分钟、缓存最多 96 项；VOD 每次请求，不持久化签名地址。线路编号使用来源标识、清晰度、编码、格式的确定性 48 位哈希，不依赖返回下标或签名 URL。按作品说明/季数/集数筛选并将重复镜像合并到同一组，格式未知或资源失效仍可能不能播；前端允许一键换线。显式所选线路缺失时返回 unavailable 和其他候选。
+
+视频直接由浏览器读取 CDN，不代理媒体字节。只接受 HTTPS、公网形式地址，不接受凭证、本机/私网字面 IP、非标准端口；这不等于对所有 CDN 的在线健康检查。优先 H.264、已实测 CDN 和较高清晰度，HLS 继续通过 hls.js 播放。xifan.py 和预置文件仅保留历史回归，不作为当前服务的备用请求。
+
+当前共 51 项后端测试，来源测试使用 MockTransport，无需访问真实上游。真实播放验证见根目录 docs/07-联网资料与追番片单.md 的 F。旧稀饭接口过程可从 Git 9a0dda8 查看。
 
 ## 联网资料与片单状态（2026-10-27）
 
@@ -71,10 +80,6 @@ xifan.py 请求稀饭 Next 的公开搜索、选集和临时播放地址接口�
 
 catalog.py 使用固定 Bangumi 主机、公开只读接口、超时与有限大小的上游响应缓存。搜索/日历响应缓存约 10 分钟；详情快照约 24 小时，错误回退明确提示。临时视频 URL 不进入资料缓存或数据库。测试使用临时数据库和模拟上游；当前 TestClient 的弃用提示保持原状，不为本轮改动替换测试依赖。
 
-## 自动匹配与来源偏好（2026-10-28）
+## 版本与学习入口
 
-GET /api/playback/{anime_id} 未指定来源时，依次使用当前浏览器记住的选择、预置关系、一天内自动匹配缓存或新搜索。匹配要求规范化精确名称及年份/集数证据；明确季数冲突不自动替代。无法唯一确定时返回 unmatched 与 candidates，让界面直接提供候选。
-
-PUT /api/sources/xifan/bindings/{anime_id} 的 JSON 为 {"source_anime_id":360}，需要原会话与同源写入校验，验证来源后写入 source_bindings。自动关系写入 auto_source_bindings。两者均只存编号，resolve 每次仍申请临时视频地址。显式 URL 选择只控制当前请求，不覆盖记忆。
-
-HTTP 客户端按服务生命周期复用并在关闭时释放；来源搜索短时缓存，搜索资料批量写入 SQLite。已有收藏、片单状态与原数据库继续保留。测试使用模拟上游、临时数据库，当前共 39 项。
+当前后端版本 0.5.0，运行依赖不变，仍按现有双终端方式启动。指南 06 保留旧单源阶段记录，指南 07 F 描述当前聚合接口；不得将实现已完成视为本人已阅读或掌握。

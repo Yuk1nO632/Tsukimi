@@ -1,4 +1,4 @@
-"""Anonymous collections, public anime metadata and single-source playback."""
+"""Anonymous collections, public anime metadata and aggregate playback."""
 
 from contextlib import asynccontextmanager
 import hashlib
@@ -20,6 +20,7 @@ from database import Database
 from catalog import BangumiClient, Catalog, CatalogError, create_catalog_router
 from playback import create_playback_router
 from xifan import SourceError, XifanSource
+from anich import AniChSource
 
 BACKEND_ROOT = Path(__file__).resolve().parent
 COOKIE_NAME = "tsukimi_session"
@@ -36,10 +37,10 @@ class CollectionUpdate(BaseModel):
 
 
 def create_app(database_path: Path | None = None, catalog_path: Path | None = None,
-               allowed_origins: set[str] | None = None, playback_source: XifanSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
+               allowed_origins: set[str] | None = None, playback_source: XifanSource | AniChSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
     store = Database(database_path or Path(os.getenv("TSUKIMI_DATABASE", str(BACKEND_ROOT / "data/tsukimi.db"))))
     metadata_provider = metadata_source or BangumiClient()
-    playback_provider = playback_source or XifanSource()
+    playback_provider = playback_source or AniChSource()
     source = catalog_path or BACKEND_ROOT.parent / "catalog/catalog.json"
     origins = allowed_origins if allowed_origins is not None else set(
         os.getenv("TSUKIMI_ALLOWED_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8000,http://localhost:8000").split(",")
@@ -64,7 +65,7 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
             metadata_provider.close()
             playback_provider.close()
 
-    application = FastAPI(title="Tsukimi API", version="0.4.0", lifespan=lifespan)
+    application = FastAPI(title="Tsukimi API", version="0.5.0", lifespan=lifespan)
 
 
     application.include_router(create_catalog_router())

@@ -1,6 +1,6 @@
 # AniCh 聚合接口可行性验证
 
-日期：2026-11-01。本人反馈：指南 07 尚未阅读，本轮先验证聚合播放思路，不代表已完成第 07 节复习。
+日期：2026-11-01。后续正式适配已完成，当前操作以指南 07 F 为准。下文保留初次可行性验证范围。本人反馈：指南 07 尚未阅读，本轮先验证聚合播放思路，不代表已完成第 07 节复习。
 
 ## 结论与实际范围
 
@@ -49,3 +49,7 @@ probe_anich.py 中的通用 Protobuf wire 读取器仅供这次探测；正式�
 - [官方 Protobuf 描述符](https://github.com/Sle2p/AniCh/blob/main/lib/protobuf/bangumi.pbjson.dart)
 - [官方播放控制器及 URL 解码](https://github.com/Sle2p/AniCh/blob/main/lib/src/pages/bangumi_vod/controller.dart)
 - [官方旧接口配置](https://github.com/Sle2p/AniCh/blob/main/api.json)
+
+## 后续适配结果
+
+正式播放器现已固定使用 AniCh 聚合来源；两部番剧第一二集、拖动、MP4 换线与一条 HLS 已通过真实浏览器验收，51 项后端测试通过。个别线路仍可能失效，新增一键换线入口。当前运行使用 anich.py 与共享 anich_protocol.py，初次探测脚本继续作为独立诊断入口。详见 [指南 07 F](07-联网资料与追番片单.md#f-anich-聚合播放适配2026-11-01可在-ab-后再看)。

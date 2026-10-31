@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { searchXifan } from "../lib/playback-api";
+import { searchPlaybackSource } from "../lib/playback-api";
 import PlayerIcon from "./player-icon";
 
 export default function SourceMatcher({
@@ -35,7 +35,7 @@ export default function SourceMatcher({
     setError("");
     setItems(null);
     try {
-      const data = await searchXifan(query.trim(), controller.signal);
+      const data = await searchPlaybackSource(query.trim(), controller.signal);
       if (!controller.signal.aborted)
         setItems(
           Array.isArray(data.items)
@@ -58,7 +58,7 @@ export default function SourceMatcher({
       <label className="source-search-label" htmlFor="source-query">
         搜索番名，更换播放来源
       </label>
-      <form role="search" aria-label="稀饭动漫来源搜索" onSubmit={search}>
+      <form role="search" aria-label="AniCh来源搜索" onSubmit={search}>
         <div className="source-search-input">
           <PlayerIcon name="search" size={17} />
           <input
@@ -77,7 +77,7 @@ export default function SourceMatcher({
         </button>
       </form>
       <p className="source-search-hint">
-        搜索稀饭动漫，选择前请核对季数与年份。
+        搜索AniCh，选择前请核对季数与年份。
       </p>
       <div aria-live="polite" aria-busy={loading || selecting}>
         {selecting && (

@@ -12,7 +12,7 @@ export default function DetailView({ anime, initialSource }) {
 
   const count = anime.episodes || 1;
   function watch(episode = 1) {
-    return `/watch/${anime.id}?episode=${episode}${initialSource ? `&source=${initialSource}` : ""}`;
+    return `/watch/${anime.id}?episode=${episode}${initialSource ? `&provider=anich&source=${initialSource}` : ""}`;
   }
 
   return (

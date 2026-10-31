@@ -30,8 +30,10 @@ export default async function WatchPage({ params, searchParams }) {
       notFound();
     return Number(value);
   }
-  const selectedSourceId = optionalId(query.source);
-  const selectedLineId = optionalId(query.line);
+  const selectedSourceId =
+    query.provider === "anich" ? optionalId(query.source) : null;
+  const selectedLineId =
+    query.provider === "anich" ? optionalId(query.line) : null;
   return (
     <WatchStudio
       key={`${id}:${selectedEpisode}:${selectedSourceId}:${selectedLineId}`}

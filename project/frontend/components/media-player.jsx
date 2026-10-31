@@ -10,7 +10,7 @@ function formatTime(value) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, nextHref }) {
+export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onNextLine, nextHref }) {
   const frameRef = useRef(null);
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
@@ -157,6 +157,10 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     if (document.fullscreenElement === frameRef.current) await document.exitFullscreen().catch(() => {});
     onFindSource?.();
   }
+  async function changeLine() {
+    if (document.fullscreenElement === frameRef.current) await document.exitFullscreen().catch(() => {});
+    onNextLine?.();
+  }
   const heading = videoError ? "暂时无法播放这一集" : media.status === "loading" ? "正在匹配并加载来源" : media.status === "unmatched" ? "先为这部番找到播放来源" : "来源暂时没有准备好";
   const percent = duration ? Math.min(100, currentTime / duration * 100) : 0;
 
@@ -173,7 +177,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
         onRateChange={(event) => setSpeed(event.currentTarget.playbackRate)} onError={onError} />}
       <div className="player-topline"><span className="player-watermark">☾ TSUKIMI</span><span className="player-now-title">{label}</span></div>
       {media.isTest && <span className="test-video-label">测试短片 · 非番剧正片</span>}
-      {overlay ? <div className="player-empty"><span className={`player-empty-icon${media.status === "loading" ? " is-loading" : ""}`} aria-hidden="true"><PlayerIcon name={media.status === "loading" ? "refresh" : "play"} size={30} /></span><h2>{heading}</h2><p>{videoError || media.message || "正在获取这一集的播放地址，请稍候。"}</p>{media.status !== "loading" && <div className="player-empty-actions"><button className="player-retry" type="button" onClick={onRetry}>重新加载</button><button className="player-find-source" type="button" onClick={findSource}>搜索 / 更换来源</button></div>}</div>
+      {overlay ? <div className="player-empty"><span className={`player-empty-icon${media.status === "loading" ? " is-loading" : ""}`} aria-hidden="true"><PlayerIcon name={media.status === "loading" ? "refresh" : "play"} size={30} /></span><h2>{heading}</h2><p>{videoError || media.message || "正在获取这一集的播放地址，请稍候。"}</p>{media.status !== "loading" && <div className="player-empty-actions">{onNextLine && <button className="player-retry" type="button" onClick={changeLine}>换一条线路</button>}<button className="player-retry" type="button" onClick={onRetry}>重新加载</button><button className="player-find-source" type="button" onClick={findSource}>搜索 / 更换来源</button></div>}</div>
         : ended ? <div className="player-ended"><span>本次播放已结束</span><div><button type="button" onClick={togglePlay}>重新播放</button>{nextHref && !media.isTest && <Link href={nextHref} scroll={false}>下一集 <PlayerIcon name="next" size={16} /></Link>}</div></div>
         : !playing && <button className="player-center-play" type="button" onClick={togglePlay} aria-label="开始播放视频"><PlayerIcon name="play" size={32} /></button>}
       {!overlay && waiting && <div className="player-buffering" role="status"><span className="loading-dot" />正在缓冲…</div>}

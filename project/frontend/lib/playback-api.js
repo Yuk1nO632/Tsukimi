@@ -17,7 +17,10 @@ async function request(path, signal) {
 }
 
 export function readPlayback(animeId, episode, sourceAnimeId, lineId, signal) {
-  const query = new URLSearchParams({ episode: String(episode) });
+  const query = new URLSearchParams({
+    episode: String(episode),
+    source_provider: "anich",
+  });
   if (sourceAnimeId) query.set("source_anime_id", String(sourceAnimeId));
   if (lineId) query.set("line_id", String(lineId));
   return request(
@@ -26,16 +29,16 @@ export function readPlayback(animeId, episode, sourceAnimeId, lineId, signal) {
   );
 }
 
-export function searchXifan(query, signal) {
+export function searchPlaybackSource(query, signal) {
   return request(
-    `/api/sources/xifan/search?q=${encodeURIComponent(query)}`,
+    `/api/sources/anich/search?q=${encodeURIComponent(query)}`,
     signal,
   );
 }
 
 export async function rememberSource(animeId, sourceId, signal) {
   const response = await fetch(
-    `/api/sources/xifan/bindings/${encodeURIComponent(animeId)}`,
+    `/api/sources/anich/bindings/${encodeURIComponent(animeId)}`,
     {
       method: "PUT",
       credentials: "same-origin",
