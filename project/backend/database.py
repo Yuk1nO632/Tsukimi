@@ -106,7 +106,9 @@ class Database:
     def cache_animes(self, items, fetched_at):
         with self.connect() as connection:
             connection.executemany("""INSERT INTO catalog_cache VALUES (?, ?, ?)
-                ON CONFLICT(anime_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at""",
+                ON CONFLICT(anime_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at
+                WHERE COALESCE(json_extract(catalog_cache.data, '$.detailComplete'), 0) != 1
+                   OR COALESCE(json_extract(excluded.data, '$.detailComplete'), 0) = 1""",
                 [(anime["id"], json.dumps(anime, ensure_ascii=False), fetched_at) for anime in items])
 
     def source_binding(self, anime_id, session_id=None):

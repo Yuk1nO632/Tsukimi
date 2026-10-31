@@ -85,3 +85,17 @@ Tsukimi/
 - [实验 02 指南](docs/02-React组件与状态.md)
 
 线路响应：播放页展开“线路响应”，点击“检测线路”查看首包耗时，可按耗时排序或点击结果换线；不显示文件大小。不可测不等于不能播放。前端检测测试：在 frontend 执行 node --test tests/line-probe.test.mjs。
+
+
+## 日常试用的生产预览
+
+后端保持运行。前端终端先按 Ctrl+C 停止 dev，再运行：
+
+```powershell
+cd C:\Users\lx\Desktop\Tsukimi\project\frontend
+npm.cmd run preview
+```
+
+预览仍在 http://127.0.0.1:3000，使用独立 .next-preview 构建目录，不覆盖开发构建。首次运行会先构建；之后按 Ctrl+C 停止。修改代码后需重新运行 preview；边改边看的学习场景继续用 npm.cmd run dev。脚本发现 3000 被占用会直接提示，不关闭已有服务。
+
+当前后端 40 项测试、前端线路检测 5 项测试通过。页面加载排查与说明见指南 07 H。

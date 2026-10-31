@@ -7,7 +7,8 @@
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 3000",
-    "sync:catalog": "powershell.exe -NoProfile -File scripts/sync-catalog.ps1"
+    "sync:catalog": "powershell.exe -NoProfile -File scripts/sync-catalog.ps1",
+    "preview": "node scripts/preview.mjs"
   },
   "dependencies": {
     "hls.js": "1.7.3",

@@ -3,10 +3,15 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { useState } from "react";
+import useApi from "../lib/use-api";
 import FavoriteButton from "./favorite-button";
 import { CollectionStatusPicker } from "./collection-provider";
 
-export default function DetailView({ anime, initialSource }) {
+export default function DetailView({ anime: initialAnime, initialSource }) {
+  const { data, error, loading, retry } = useApi(
+    `/api/catalog/${initialAnime.id}`,
+  );
+  const anime = data || initialAnime;
   const [group, setGroup] = useState(0);
   const [expanded, setExpanded] = useState(false);
 
@@ -24,9 +29,18 @@ export default function DetailView({ anime, initialSource }) {
         <span>›</span>
         <strong>{anime.title}</strong>
       </nav>
-      {anime.detailWarning && (
+      {(anime.detailWarning ||
+        error ||
+        (loading && !initialAnime.detailComplete)) && (
         <p className="detail-cache-note" role="status">
-          {anime.detailWarning}
+          {error
+            ? "完整资料暂未更新，已显示缓存资料。"
+            : anime.detailWarning || "已显示缓存资料，正在补充详情…"}
+          {error && (
+            <button className="text-button" type="button" onClick={retry}>
+              重新获取详情
+            </button>
+          )}
         </p>
       )}
       <section className="series-overview" aria-labelledby="series-title">

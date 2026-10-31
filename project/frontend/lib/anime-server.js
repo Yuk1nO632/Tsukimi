@@ -1,12 +1,13 @@
 import { cache } from "react";
 import { getAnime } from "./anime";
 
-// Server components use the same backend as the /api rewrite; browsers keep same-origin requests.
+// Render from the backend snapshot first. DetailView enriches after the page is usable.
+// React cache deduplicates metadata/page reads within the same render.
 export const loadAnime = cache(async (id) => {
   if (!/^bgm-[1-9]\d{0,8}$/.test(id)) return null;
   try {
     const response = await fetch(
-      `${process.env.TSUKIMI_API_ORIGIN || "http://127.0.0.1:8000"}/api/catalog/${id}`,
+      `${process.env.TSUKIMI_API_ORIGIN || "http://127.0.0.1:8000"}/api/catalog/${id}?summary=true`,
       {
         cache: "no-store",
         signal: AbortSignal.timeout(20000),

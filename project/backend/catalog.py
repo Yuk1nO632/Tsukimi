@@ -207,7 +207,8 @@ def create_catalog_router():
         return request.app.state.catalog.calendar()
 
     @router.get("/{anime_id}")
-    def detail(anime_id: str, request: Request):
-        return request.app.state.catalog.get(anime_id, enrich=True)
+    def detail(anime_id: str, request: Request, summary: bool = False):
+        # Route rendering uses cached search/detail data; full enrichment is separate.
+        return request.app.state.catalog.get(anime_id, enrich=not summary)
 
     return router

@@ -27,6 +27,7 @@ export default function SiteHeader() {
           {links.map(([href, label]) => (
             <Link
               key={href}
+              prefetch={true}
               href={href}
               aria-current={pathname === href ? "page" : undefined}
               className={
@@ -65,6 +66,7 @@ export default function SiteHeader() {
         {links.map(([href, label]) => (
           <Link
             key={href}
+            prefetch={true}
             href={href}
             aria-current={pathname === href ? "page" : undefined}
           >

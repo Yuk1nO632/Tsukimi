@@ -167,6 +167,45 @@ class CatalogCollectionTests(unittest.TestCase):
         with self.client() as client:
             self.assertEqual(client.get('/api/catalog/bgm-10380').status_code,404)
 
+    def test_summary_navigation_does_not_wait_for_external_enrichment(self):
+        from catalog import normalize
+        from database import Database
+        store = Database(self.database)
+        with self.client() as client:
+            summary = normalize({**SUBJECT, 'infobox': []})
+            store.cache_anime(summary, 100)
+            self.failure = 'timeout'
+            response = client.get('/api/catalog/bgm-10380?summary=true')
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.json()['detailComplete'])
+            self.assertEqual(self.requests, [])
+            # Full detail still refreshes separately and falls back honestly on failure.
+            data = client.get('/api/catalog/bgm-10380').json()
+            self.assertIn('detailWarning', data)
+            self.assertTrue(self.requests)
+
+    def test_search_summary_preserves_rich_detail_and_its_original_age(self):
+        from catalog import normalize
+        from database import Database
+        store = Database(self.database)
+        with self.client() as client:
+            rich = client.get('/api/catalog/bgm-10380').json()
+            store.cache_anime(rich, 100)
+            # Exercise the actual bulk cache writer used by search.
+            summary = normalize({**SUBJECT, 'infobox': []})
+            store.cache_animes([summary], 200)
+            cached, stamp = store.cached_anime('bgm-10380')
+            self.assertEqual(stamp, 100)
+            self.assertTrue(cached['detailComplete'])
+            self.assertEqual(cached['staff'][0]['value'], 'WHITE FOX')
+            self.assertTrue(client.get('/api/catalog/bgm-10380?summary=true').json()['detailComplete'])
+            self.assertNotIn('detailWarning', client.get('/api/catalog/bgm-10380').json())
+
+    def test_summary_miss_fetches_real_details_and_preserves_true_404(self):
+        with self.client() as client:
+            self.assertEqual(client.get('/api/catalog/bgm-10380?summary=true').json()['id'], 'bgm-10380')
+            self.assertEqual(client.get('/api/catalog/bgm-999999999?summary=true').status_code, 404)
+
 
 if __name__ == '__main__':
     unittest.main()

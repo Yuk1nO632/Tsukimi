@@ -17,3 +17,6 @@ dist/
 
 # Isolated UI verification build
 .next-qa/
+
+# Production preview does not overwrite the dev build
+.next-preview/
