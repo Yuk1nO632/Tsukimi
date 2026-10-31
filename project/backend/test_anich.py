@@ -13,7 +13,7 @@ from anich import AniChSource, public_media_url
 from anich_protocol import fields, decode_url
 from database import Database
 from main import create_app
-from xifan import SourceError
+from source_errors import SourceError
 
 
 def varint(n):
@@ -182,6 +182,46 @@ class AniChTests(unittest.TestCase):
         self.addCleanup(provider.close)
         result = provider.resolve(32339, 1)
         self.assertEqual(result['line_name'], 'high · 1080P · H.264')
+
+    def test_current_search_endpoint_and_retired_endpoint_removed(self):
+        with self.client() as client:
+            data = client.get('/api/sources/anich/search', params={'q': '芙莉莲'}).json()
+            self.assertEqual(data['items'][0]['id'], 32339)
+            self.assertEqual(client.get('/api/sources/anich/search', params={'q': ' '}).status_code, 400)
+            paths = client.get('/openapi.json').json()['paths']
+            self.assertTrue(all('/sources/anich/' in path for path in paths if '/sources/' in path))
+
+    def test_invalid_playback_parameters_rejected_before_provider_call(self):
+        with self.client() as client:
+            for url, status in [('/api/playback/unknown', 404),
+                                ('/api/playback/bgm-400602?episode=29', 404),
+                                ('/api/playback/bgm-400602?episode=0', 422),
+                                ('/api/playback/bgm-400602?source_anime_id=-1', 422)]:
+                self.assertEqual(client.get(url).status_code, status)
+            self.assertEqual(self.calls, [])
+
+    def test_explicit_choice_does_not_overwrite_saved_binding_and_response_not_cached(self):
+        with self.client() as client:
+            client.get('/api/collection')
+            client.put('/api/sources/anich/bindings/bgm-400602', json={'source_anime_id':32339})
+            response = client.get('/api/playback/bgm-400602?source_provider=anich&source_anime_id=32340')
+            self.assertEqual(response.json()['source_anime_id'], 32340)
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+            self.assertTrue(all('url' in line for line in response.json()['lines']))
+            self.assertEqual(client.get('/api/playback/bgm-400602').json()['source_anime_id'], 32339)
+
+    def test_stale_auto_binding_cleared_so_retry_discovers_again(self):
+        store = Database(self.path);store.initialize()
+        store.save_source_binding('anich:bgm-400602', 999)
+        original = self.handle
+        def handle(request):
+            return httpx.Response(404) if request.url.path.endswith('/detail/999') else original(request)
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        with TestClient(create_app(database_path=self.path, playback_source=provider)) as client:
+            self.assertEqual(client.get('/api/playback/bgm-400602').status_code, 404)
+            self.assertEqual(store.source_binding('anich:bgm-400602')[0], None)
+            self.assertEqual(client.get('/api/playback/bgm-400602').json()['source_anime_id'], 32339)
 
     def test_wire_truncation_unknown_fields_and_url_rule(self):
         self.assertEqual(list(fields(field(99, 'unknown') + field(1, 2))), [(99,b'unknown'),(1,2)])

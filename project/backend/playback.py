@@ -1,8 +1,7 @@
 """Resolve a source automatically; remember explicit browser choices without storing signed URLs."""
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from matching import discover_source
-from xifan import SourceError
+from source_errors import SourceError
 
 
 class SourceBinding(BaseModel):
@@ -11,11 +10,11 @@ class SourceBinding(BaseModel):
 
 def create_playback_router(provider, current_session, require_session):
     router = APIRouter(prefix="/api")
-    provider_name = getattr(provider, "name", "xifan")
+    provider_name = provider.name
 
     def binding_key(anime_id):
-        # Existing unprefixed IDs belong to Xifan; never reuse them for AniCh.
-        return anime_id if provider_name == "xifan" else f"{provider_name}:{anime_id}"
+        # Isolate the current provider from unprefixed legacy source IDs.
+        return f"{provider_name}:{anime_id}"
 
     @router.get(f"/sources/{provider_name}/search")
     def search(q: str = Query(min_length=1, max_length=80)):
@@ -29,8 +28,7 @@ def create_playback_router(provider, current_session, require_session):
         session_id = require_session(request)
         anime = request.app.state.catalog.get(anime_id)
         provider.detail(payload.source_anime_id)
-        if hasattr(provider, "validate_binding"):
-            provider.validate_binding(anime, payload.source_anime_id)
+        provider.validate_binding(anime, payload.source_anime_id)
         request.app.state.store.save_source_binding(binding_key(anime_id), payload.source_anime_id, session_id)
         return {"anime_id": anime_id, "source_anime_id": payload.source_anime_id}
 
@@ -39,8 +37,8 @@ def create_playback_router(provider, current_session, require_session):
                  source_anime_id: int | None = Query(default=None, ge=1),
                  line_id: int | None = Query(default=None, ge=1),
                  source_provider: str | None = Query(default=None, max_length=20)):
-        if provider_name == "anich" and source_provider != "anich":
-            # Legacy URLs contain Xifan IDs with the same numeric shape.
+        if source_provider != "anich":
+            # Legacy URLs contain old provider IDs with the same numeric shape.
             source_anime_id = line_id = None
         anime = request.app.state.catalog.get(anime_id)
         if anime["episodes"] > 0 and episode > anime["episodes"]:
@@ -50,18 +48,15 @@ def create_playback_router(provider, current_session, require_session):
         source_id, kind = store.source_binding(binding_key(anime_id), session_id)
         if source_anime_id:
             source_id, kind = source_anime_id, "explicit"
-        elif provider_name == "xifan" and kind != "saved" and anime_id in request.app.state.xifan_bindings:
-            source_id, kind = request.app.state.xifan_bindings[anime_id], "default"
         if source_id is None:
-            source_id, candidates = provider.discover(anime) if hasattr(provider, "discover") else discover_source(anime, provider)
+            source_id, candidates = provider.discover(anime)
             if source_id is None:
                 return {"status": "unmatched", "provider": provider_name, "candidates": candidates,
                         "message": "未能唯一确认对应作品，请从候选中选择一次。" if candidates else "暂未找到对应来源，可以尝试别名或稍后重试。"}
             store.save_source_binding(binding_key(anime_id), source_id)
             kind = "automatic"
         try:
-            if hasattr(provider, "validate_binding"):
-                provider.validate_binding(anime, source_id)
+            provider.validate_binding(anime, source_id)
             return {**provider.resolve(source_id, episode, line_id), "match_kind": kind}
         except SourceError as error:
             if kind == "automatic" and error.status_code in {404, 409} and line_id is None:

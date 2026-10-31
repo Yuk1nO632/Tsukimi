@@ -2030,3 +2030,116 @@ summary:focus-visible {
     font-size: 12px;
   }
 }
+
+.line-selector {
+  min-width: 0;
+}
+.line-diagnostics {
+  margin-top: 12px;
+  border-top: 1px solid var(--line, #e5eaf2);
+  padding-top: 12px;
+}
+.line-diagnostics summary {
+  cursor: pointer;
+  color: #586b8c;
+  font-size: 12px;
+}
+.line-diagnostics summary > span {
+  color: #8c99af;
+  font-size: 11px;
+  margin-left: 6px;
+}
+.line-probe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  font-size: 11px;
+}
+.line-probe-actions button {
+  border: 1px solid #f6cbd8;
+  border-radius: 6px;
+  padding: 5px 9px;
+  color: #d75f87;
+  background: #fff4f8;
+  cursor: pointer;
+}
+.line-probe-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.line-probe-actions label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #667895;
+}
+.line-probe-actions input {
+  accent-color: #ef7ba0;
+}
+.line-probe-note,
+.line-probe-status {
+  font-size: 10px;
+  line-height: 1.8;
+  color: #8b97ad;
+  margin: 9px 0;
+}
+.line-probe-status {
+  min-height: 18px;
+}
+.line-probe-list {
+  max-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #e6eaf1;
+  border-radius: 8px;
+  background: #fff;
+}
+.line-probe-list > button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  text-align: left;
+  padding: 11px;
+  border: 0;
+  border-bottom: 1px solid #edf0f6;
+  background: #fff;
+  cursor: pointer;
+}
+.line-probe-list > button:last-child {
+  border-bottom: 0;
+}
+.line-probe-list > button:hover,
+.line-probe-list > button[aria-pressed="true"] {
+  background: #fff5f8;
+}
+.line-probe-list > button > span {
+  color: #556781;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.line-probe-list small {
+  color: #dd7093;
+  font-size: 10px;
+  margin-left: 8px;
+}
+.line-probe-list strong {
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.line-probe-fast {
+  color: #399c76;
+}
+.line-probe-medium {
+  color: #ba8b3b;
+}
+.line-probe-slow {
+  color: #d26475;
+}
+.line-probe-unknown {
+  color: #97a2b4;
+}

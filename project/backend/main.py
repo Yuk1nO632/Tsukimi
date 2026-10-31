@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from database import Database
 from catalog import BangumiClient, Catalog, CatalogError, create_catalog_router
 from playback import create_playback_router
-from xifan import SourceError, XifanSource
+from source_errors import SourceError
 from anich import AniChSource
 
 BACKEND_ROOT = Path(__file__).resolve().parent
@@ -37,7 +37,7 @@ class CollectionUpdate(BaseModel):
 
 
 def create_app(database_path: Path | None = None, catalog_path: Path | None = None,
-               allowed_origins: set[str] | None = None, playback_source: XifanSource | AniChSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
+               allowed_origins: set[str] | None = None, playback_source: AniChSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
     store = Database(database_path or Path(os.getenv("TSUKIMI_DATABASE", str(BACKEND_ROOT / "data/tsukimi.db"))))
     metadata_provider = metadata_source or BangumiClient()
     playback_provider = playback_source or AniChSource()
@@ -56,8 +56,6 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         for anime in catalog["anime"]:
             store.cache_anime(anime, 0, seed=True)
         application.state.catalog = Catalog(store, metadata_provider)
-        bindings_path = source.parent / "xifan-bindings.json"
-        application.state.xifan_bindings = json.loads(bindings_path.read_text(encoding="utf-8")) if bindings_path.exists() else {}
         application.state.store = store
         try:
             yield

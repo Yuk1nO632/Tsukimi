@@ -12,7 +12,7 @@ import httpx
 
 from anich_protocol import LIMIT, fields, decode_url
 from matching import exact_source, title_key, season_number
-from xifan import SourceError
+from source_errors import SourceError
 
 
 def messages(payload):
@@ -222,7 +222,7 @@ class AniChSource:
             choices = sorted(lines.values(), key=rank)
         except (ValueError, TypeError, KeyError, AttributeError) as error:
             raise SourceError('AniCh 视频资料格式暂不受支持，请稍后重试。') from error
-        common.update(lines=[{'id': item['id'], 'name': item['name']} for item in choices], filtered_candidates=rejected)
+        common.update(lines=[{'id': item['id'], 'name': item['name'], 'url': item['url'], 'format': item['format']} for item in choices], filtered_candidates=rejected)
         selected = next((item for item in choices if item['id'] == line_id), None) if line_id else (choices[0] if choices else None)
         if not selected:
             return {**common, 'status': 'unavailable', 'message': '所选线路本集暂不可用，请切换线路。' if choices else '尚无核对通过的线路，请稍后重试或重新匹配。'}

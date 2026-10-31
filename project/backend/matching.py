@@ -48,15 +48,3 @@ def exact_source(anime, candidates):
     if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
         return None
     return ranked[0][1]["id"]
-
-
-def discover_source(anime, provider):
-    candidates = {}
-    queries = list(dict.fromkeys(value.strip()[:80] for value in (anime.get("title", ""), anime.get("originalTitle", "")) if value.strip()))
-    for query in queries[:2]:
-        for item in provider.search(query):
-            candidates[item["id"]] = item
-        selected = exact_source(anime, list(candidates.values()))
-        if selected:
-            return selected, list(candidates.values())
-    return None, list(candidates.values())

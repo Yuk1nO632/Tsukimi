@@ -9,6 +9,7 @@ import FavoriteButton from "./favorite-button";
 import MediaPlayer from "./media-player";
 import SourceMatcher from "./source-matcher";
 import PlayerIcon from "./player-icon";
+import LineSelector from "./line-selector";
 
 export default function WatchStudio({
   anime,
@@ -374,30 +375,18 @@ export default function WatchStudio({
               </div>
             )}
             {source.lines?.length > 0 && (
-              <label className="source-line-label">
-                播放线路
-                <select
-                  aria-label="播放线路"
-                  disabled={testMode}
-                  value={source.line_id || ""}
-                  onChange={(event) =>
-                    router.replace(
-                      episodeUrl(
-                        selectedEpisode,
-                        source.source_anime_id,
-                        Number(event.target.value),
-                      ),
-                      { scroll: false },
-                    )
-                  }
-                >
-                  {source.lines.map((line) => (
-                    <option key={line.id} value={line.id}>
-                      {line.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <LineSelector
+                context={`${anime.id}:${selectedEpisode}`}
+                lines={source.lines}
+                selectedId={source.line_id}
+                disabled={testMode}
+                onSelect={(id) =>
+                  router.replace(
+                    episodeUrl(selectedEpisode, source.source_anime_id, id),
+                    { scroll: false },
+                  )
+                }
+              />
             )}
             <div className="source-panel-actions">
               <button
