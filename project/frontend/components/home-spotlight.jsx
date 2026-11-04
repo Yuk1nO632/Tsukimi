@@ -20,8 +20,10 @@ function PlayerLoadFailure({ onFindSource }) {
   );
 }
 
+const loadPreviewPlayer = () => import("./media-player");
+
 const PreviewPlayer = dynamic(
-  () => import("./media-player").catch(() => ({ default: PlayerLoadFailure })),
+  () => loadPreviewPlayer().catch(() => ({ default: PlayerLoadFailure })),
   {
     ssr: false,
     loading: () => (
@@ -51,11 +53,22 @@ function SpotlightPreview({ anime }) {
       { threshold: [0, 0.5] },
     );
     observer.observe(element);
+    const prepare = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          void loadPreviewPlayer().catch(() => {});
+          prepare.disconnect();
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+    prepare.observe(element);
     const visibility = () => setPageVisible(!document.hidden);
     visibility();
     document.addEventListener("visibilitychange", visibility);
     return () => {
       observer.disconnect();
+      prepare.disconnect();
       document.removeEventListener("visibilitychange", visibility);
     };
   }, []);
@@ -66,6 +79,7 @@ function SpotlightPreview({ anime }) {
 
   useEffect(() => {
     if (!started) return;
+    void loadPreviewPlayer().catch(() => {});
     const controller = new AbortController();
     setSource({ status: "loading" });
     readPlayback(anime.id, 1, null, null, controller.signal)
@@ -103,7 +117,6 @@ function SpotlightPreview({ anime }) {
         <PreviewPlayer
           key={`${attempt}:${source.url}`}
           media={source}
-          poster={anime.cover}
           label={`${anime.title} · 第 1 集`}
           autoPlay
           initialMuted
@@ -112,21 +125,7 @@ function SpotlightPreview({ anime }) {
           onFindSource={() => router.push(watchHref)}
         />
       ) : (
-        <div className="spotlight-cover-stage">
-          <Image
-            className="spotlight-backdrop"
-            src={anime.cover}
-            alt=""
-            fill
-            sizes="(max-width: 900px) 100vw, 60vw"
-          />
-          <Image
-            className="spotlight-keyvisual"
-            src={anime.cover}
-            alt={`${anime.title}海报`}
-            fill
-            sizes="(max-width: 900px) 100vw, 60vw"
-          />
+        <div className="spotlight-loading-stage">
           <span className="spotlight-episode">第 1 集</span>
           <div
             className="spotlight-preview-state"

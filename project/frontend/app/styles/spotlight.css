@@ -41,7 +41,7 @@
   border-radius: 12px;
   box-shadow: 0 10px 32px #2b203522;
 }
-.spotlight-cover-stage {
+.spotlight-loading-stage {
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -49,21 +49,12 @@
   background: #16141f;
   isolation: isolate;
 }
-.spotlight-cover-stage:after {
+.spotlight-loading-stage:after {
   position: absolute;
   content: "";
   inset: 0;
   background: linear-gradient(180deg, #12121e22, #12121e33 55%, #12121eaa);
   z-index: 1;
-}
-.spotlight-backdrop {
-  object-fit: cover;
-  opacity: 0.3;
-  filter: blur(28px);
-  transform: scale(1.08);
-}
-.spotlight-keyvisual {
-  object-fit: contain;
 }
 .spotlight-episode {
   position: absolute;
@@ -438,4 +429,8 @@
   .spotlight-thumb img {
     transition: none;
   }
+}
+
+.spotlight-media .player-frame.is-initial-loading .player-controls {
+  visibility: hidden;
 }

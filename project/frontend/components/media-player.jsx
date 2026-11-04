@@ -19,6 +19,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   const controlsHovered = useRef(false);
   const touchReveal = useRef(false);
   const [playing, setPlaying] = useState(false);
+  const [hasFrame, setHasFrame] = useState(false);
   const [ended, setEnded] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -32,6 +33,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   const [isFullscreen, setIsFullscreen] = useState(false);
   const available = media.status === "ready" && !!media.url;
   const overlay = !available || !!videoError;
+  const previewLoading = active === true && available && !hasFrame && !videoError;
 
   const revealControls = useCallback(() => {
     setControlsVisible(true);
@@ -191,9 +193,10 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   const heading = videoError ? "暂时无法播放这一集" : media.status === "loading" ? "正在匹配并加载来源" : media.status === "unmatched" ? "先为这部番找到播放来源" : "来源暂时没有准备好";
   const percent = duration ? Math.min(100, currentTime / duration * 100) : 0;
 
-  return <div className={`player-frame${controlsVisible ? " controls-visible" : " controls-hidden"}`} ref={frameRef} tabIndex={0} role="region" aria-label={`${label}播放器，空格播放暂停，方向键快进或调节音量，F 全屏`} onKeyDown={onKeyDown} onPointerMove={revealControls} onPointerDown={(event) => { touchReveal.current = event.pointerType === "touch" && !controlsVisible && event.target === videoRef.current; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }}>
+  return <div className={`player-frame${controlsVisible ? " controls-visible" : " controls-hidden"}${previewLoading ? " is-initial-loading" : ""}`} ref={frameRef} tabIndex={0} role="region" aria-label={`${label}播放器，空格播放暂停，方向键快进或调节音量，F 全屏`} onKeyDown={onKeyDown} onPointerMove={revealControls} onPointerDown={(event) => { touchReveal.current = event.pointerType === "touch" && !controlsVisible && event.target === videoRef.current; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }}>
     <div className="player-canvas" onClick={clickCanvas} onDoubleClick={(event) => { if (event.target === videoRef.current || event.target === event.currentTarget) { window.clearTimeout(clickTimer.current); fullscreen(); } }}>
       {available && <video ref={videoRef} className="actual-video" preload="metadata" autoPlay={active !== false && (autoPlay ?? !media.isTest)} muted={muted} playsInline poster={poster} src={active === undefined && media.format !== "hls" ? media.url : undefined} aria-label={label}
+        onLoadedData={() => setHasFrame(true)} onEmptied={() => setHasFrame(false)}
         onLoadedMetadata={(event) => { setDuration(event.currentTarget.duration); setVideoError(""); }}
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
@@ -206,8 +209,8 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
       {media.isTest && <span className="test-video-label">测试短片 · 非番剧正片</span>}
       {overlay ? <div className="player-empty"><span className={`player-empty-icon${media.status === "loading" ? " is-loading" : ""}`} aria-hidden="true"><PlayerIcon name={media.status === "loading" ? "refresh" : "play"} size={30} /></span><h2>{heading}</h2><p>{videoError || media.message || "正在获取这一集的播放地址，请稍候。"}</p>{media.status !== "loading" && <div className="player-empty-actions">{onNextLine && <button className="player-retry" type="button" onClick={changeLine}>换一条线路</button>}<button className="player-retry" type="button" onClick={onRetry}>重新加载</button><button className="player-find-source" type="button" onClick={findSource}>搜索 / 更换来源</button></div>}</div>
         : ended ? <div className="player-ended"><span>本次播放已结束</span><div><button type="button" onClick={togglePlay}>重新播放</button>{nextHref && !media.isTest && <Link href={nextHref} scroll={false}>下一集 <PlayerIcon name="next" size={16} /></Link>}</div></div>
-        : !playing && <button className="player-center-play" type="button" onClick={togglePlay} aria-label="开始播放视频"><PlayerIcon name="play" size={32} /></button>}
-      {!overlay && waiting && <div className="player-buffering" role="status"><span className="loading-dot" />正在缓冲…</div>}
+        : !playing && !previewLoading && <button className="player-center-play" type="button" onClick={togglePlay} aria-label="开始播放视频"><PlayerIcon name="play" size={32} /></button>}
+      {!overlay && (waiting || previewLoading) && <div className="player-buffering" role="status"><span className="loading-dot" />{previewLoading ? "正在加载视频…" : "正在缓冲…"}</div>}
     </div>
     {notice && <div className="player-toast" role="status">{notice}</div>}
     <div className="player-controls real-player-controls" ref={controlsRef} onPointerEnter={() => { controlsHovered.current = true; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }} onFocusCapture={revealControls} onBlurCapture={revealControls}>
