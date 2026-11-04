@@ -183,6 +183,58 @@ class AniChTests(unittest.TestCase):
         result = provider.resolve(32339, 1)
         self.assertEqual(result['line_name'], 'high · 1080P · H.264')
 
+    def test_bocchi_terminal_punctuation_lookup_matches_verified_first_episode(self):
+        keywords = []
+        def handle(request):
+            path = request.url.path
+            if path.endswith('/search'):
+                keyword = request.url.params['keyword']
+                keywords.append(keyword)
+                if keyword != '孤独摇滚':
+                    return httpx.Response(500)
+                return httpx.Response(200, content=field(1, field(1, 31764) + field(2, '孤独摇滚！') + field(4, 12))
+                    + field(1, field(1, 33380) + field(2, '剧场总集篇 孤独摇滚！ Re:') + field(4, 1)))
+            if path == '/bangumi/detail/31764':
+                return httpx.Response(200, json={'id': 31764, 'title': '孤独摇滚！', 'titles': ['ぼっち・ざ・ろっく！'],
+                    'sites': [{'site': 'bangumi', 'id': '328609'}]})
+            if path == '/bangumi/episodes/31764':
+                return httpx.Response(200, content=field(1, field(1, 1) + field(2, 1)))
+            if path == '/vod/31764/1':
+                payload = field(1, field(1, encoded('https://cdn.example.com/bocchi-01.mp4')) + field(2, 1)
+                    + field(4, '第 1 集') + field(5, 'main') + field(6, '孤独摇滚！ · 1920x1080 · H.264'))
+                return httpx.Response(200, json=list(payload))
+            raise AssertionError('Unexpected source request: ' + path)
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        with TestClient(create_app(database_path=self.path, playback_source=provider)) as client:
+            response = client.get('/api/playback/bgm-328609')
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual((data['status'], data['source_anime_id'], data['source_title'], data['episode_title']),
+                ('ready', 31764, '孤独摇滚！', '第 1 集'))
+            self.assertEqual(data['format'], 'mp4')
+            # Manual source lookup shares the normalized cache and returns original titles.
+            items = client.get('/api/sources/anich/search', params={'q': '孤独摇滚！！'}).json()['items']
+            self.assertEqual(items[0]['title'], '孤独摇滚！')
+            self.assertEqual(keywords, ['孤独摇滚'])
+
+    def test_search_keyword_cleanup_preserves_internal_symbols_and_rejects_empty(self):
+        keywords = []
+        def handle(request):
+            keywords.append(request.url.params['keyword'])
+            return self.handle(request)
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        provider.search("  BanG Dream! It's MyGO!!!!!  ")
+        provider.search("BanG Dream! It's MyGO")
+        provider.search('Fate/stay night')
+        provider.search('作品？')
+        self.assertEqual(keywords, ["BanG Dream! It's MyGO", 'Fate/stay night', '作品'])
+        with self.assertRaises(SourceError) as caught:
+            provider.search('  ！?！！  ')
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertEqual(len(keywords), 3)
+
     def test_current_search_endpoint_and_retired_endpoint_removed(self):
         with self.client() as client:
             data = client.get('/api/sources/anich/search', params={'q': '芙莉莲'}).json()

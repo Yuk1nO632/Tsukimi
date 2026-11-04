@@ -95,9 +95,14 @@ class AniChSource:
         return value
 
     def search(self, query):
+        # AniCh rejects some terminal title punctuation (e.g. 孤独摇滚！) with HTTP 500.
+        # Only simplify the lookup keyword; returned titles and identity checks stay intact.
+        keyword = query.strip().rstrip('!！?？ \t\r\n')
+        if not keyword:
+            raise SourceError('请输入有效的番名关键词。', 400)
         def load():
             try:
-                rows = messages(self._get('/bangumi/search', {'keyword': query, 'skip': 0}))
+                rows = messages(self._get('/bangumi/search', {'keyword': keyword, 'skip': 0}))
                 items = []
                 for row in rows[:24]:
                     if not isinstance(row.get(1), int) or row[1] <= 0:
@@ -108,7 +113,7 @@ class AniChSource:
                 return items
             except (ValueError, TypeError, KeyError, OverflowError, OSError) as error:
                 raise SourceError('AniCh 搜索资料格式暂不受支持。') from error
-        return self._cached(('search', query), load, 600)
+        return self._cached(('search', keyword), load, 600)
 
     def detail(self, source_id):
         def load():
