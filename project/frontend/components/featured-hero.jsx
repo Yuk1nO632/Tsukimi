@@ -6,15 +6,13 @@ import { useEffect, useState } from "react";
 
 export default function FeaturedHero({ items = [], seasonLabel = "本季新番" }) {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [autoPlay, setAutoPlay] = useState(true);
+  const [reducedMotion, setReducedMotion] = useState(true);
   const [pageVisible, setPageVisible] = useState(true);
   const active = items[activeIndex % items.length];
 
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const updateMotion = () => {
-      if (preference.matches) setAutoPlay(false);
-    };
+    const updateMotion = () => setReducedMotion(preference.matches);
     const updateVisibility = () => setPageVisible(!document.hidden);
     updateMotion();
     updateVisibility();
@@ -27,12 +25,12 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
   }, []);
 
   useEffect(() => {
-    if (!autoPlay || !pageVisible || items.length < 2) return;
+    if (reducedMotion || !pageVisible || items.length < 2) return;
     const timer = window.setTimeout(() => {
       setActiveIndex((previous) => (previous + 1) % items.length);
     }, 6500);
     return () => window.clearTimeout(timer);
-  }, [activeIndex, autoPlay, pageVisible, items.length]);
+  }, [activeIndex, reducedMotion, pageVisible, items.length]);
 
   if (!active) return null;
   function move(offset) {
@@ -46,8 +44,6 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
       className="season-hero"
       aria-roledescription="轮播"
       aria-label="当季新番推荐"
-      onMouseEnter={() => setAutoPlay(false)}
-      onFocusCapture={() => setAutoPlay(false)}
     >
       <div className="season-backdrop" aria-hidden="true" key={active.id}>
         <Image
@@ -201,20 +197,6 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
                 </svg>
               </button>
             </div>
-            <button
-              className="season-autoplay"
-              type="button"
-              role="switch"
-              aria-label="自动轮播"
-              aria-checked={autoPlay}
-              title={autoPlay ? "点击关闭自动轮播" : "点击开启自动轮播"}
-              onClick={() => setAutoPlay((previous) => !previous)}
-            >
-              <span>自动轮播</span>
-              <span className="season-switch-track" aria-hidden="true">
-                <span />
-              </span>
-            </button>
           </div>
         )}
       </div>
