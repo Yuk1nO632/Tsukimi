@@ -9,6 +9,7 @@ import FeaturedHero from "./featured-hero";
 import CalendarBoard from "./calendar-board";
 import HomeSeasonRanking from "./home-season-ranking";
 import HomeCollections from "./home-collections";
+import HomeSpotlight from "./home-spotlight";
 import { collectionLabels, useCollection } from "./collection-provider";
 import { LoadFailure, SkeletonGrid } from "./portal-state";
 
@@ -116,6 +117,7 @@ export default function HomeDashboard() {
             </span>
           </Link>
         </nav>
+        <HomeSpotlight items={classics.slice(0, 4)} />
         <section className="home-section" aria-labelledby="home-season-title">
           <div className="portal-section-heading">
             <div>

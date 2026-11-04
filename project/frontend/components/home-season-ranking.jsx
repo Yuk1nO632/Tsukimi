@@ -83,7 +83,6 @@ export default function HomeSeasonRanking({
         </ol>
       )}
       <div className="ranking-footer">
-        <span>资料热度 ≠ 播放量</span>
         <Link prefetch={false} href="/browse?sort=heat">
           更多热门番剧 →
         </Link>

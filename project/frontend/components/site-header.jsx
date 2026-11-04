@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 
 import { useCollection } from "./collection-provider";
 import HeaderSearch from "./header-search";
+import Brand from "./brand";
 import { Suspense } from "react";
 
 export default function SiteHeader() {
@@ -19,10 +20,7 @@ export default function SiteHeader() {
   return (
     <header className="site-header">
       <div className="header-inner content-shell">
-        <Link className="brand" href="/" aria-label="Tsukimi 首页">
-          <span className="brand-mark" aria-hidden="true" />
-          Tsukimi
-        </Link>
+        <Brand />
         <nav className="header-navigation" aria-label="主导航">
           {links.map(([href, label]) => (
             <Link

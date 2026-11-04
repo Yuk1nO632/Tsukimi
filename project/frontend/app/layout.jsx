@@ -2,6 +2,7 @@ import "./globals.css";
 import Link from "next/link";
 
 import SiteHeader from "../components/site-header";
+import Brand from "../components/brand";
 import {
   CollectionFeedback,
   CollectionProvider,
@@ -10,7 +11,6 @@ import {
 export const metadata = {
   title: { default: "Tsukimi · 番剧与追番", template: "%s · Tsukimi" },
   description: "搜索番剧资料，查看放送安排，管理追番片单。",
-  icons: { icon: "data:," },
 };
 export default function RootLayout({ children }) {
   return (
@@ -22,9 +22,7 @@ export default function RootLayout({ children }) {
           <main>{children}</main>
           <CollectionFeedback />
           <footer className="site-footer content-shell">
-            <Link className="footer-brand" href="/">
-              ☾ Tsukimi
-            </Link>
+            <Brand footer />
             <div>
               <a href="https://bgm.tv" target="_blank" rel="noreferrer">
                 番剧资料与放送安排：Bangumi ↗

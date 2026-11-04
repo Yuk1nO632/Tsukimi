@@ -10,7 +10,7 @@ function formatTime(value) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onNextLine, nextHref }) {
+export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onNextLine, nextHref, autoPlay, initialMuted = false, active }) {
   const frameRef = useRef(null);
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
@@ -23,7 +23,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(initialMuted);
   const [speed, setSpeed] = useState(1);
   const [waiting, setWaiting] = useState(false);
   const [videoError, setVideoError] = useState("");
@@ -63,8 +63,25 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   useEffect(() => {
     const video = videoRef.current;
     if (!available || !video) return;
+    // Homepage previews suspend the actual source, including HLS segment downloads.
+    // Existing watch players omit active and keep their original loading behavior.
+    if (active === false) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      return;
+    }
     let disposed = false;
     let hls = null;
+    if (active !== undefined && media.format !== "hls") video.src = media.url;
+    const startPreview = () => {
+      if (autoPlay !== true || disposed) return;
+      video.play().catch((error) => {
+        if (!disposed && error.name !== "AbortError")
+          setNotice("自动播放未开始，请点击画面中的播放按钮。");
+      });
+    };
+    video.addEventListener("canplay", startPreview, { once: true });
     if (media.format === "hls") {
       if (video.canPlayType("application/vnd.apple.mpegurl")) video.src = media.url;
       else {
@@ -83,8 +100,18 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     const timer = window.setTimeout(() => {
       if (video.readyState === 0 && !video.error) setVideoError("视频加载时间较长，请重试或切换线路。");
     }, 25000);
-    return () => { disposed = true; window.clearTimeout(timer); hls?.destroy(); video.pause(); };
-  }, [available, media.url, media.format]);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      video.removeEventListener("canplay", startPreview);
+      hls?.destroy();
+      video.pause();
+      if (active !== undefined) {
+        video.removeAttribute("src");
+        video.load();
+      }
+    };
+  }, [available, media.url, media.format, active, autoPlay]);
 
   async function togglePlay() {
     const video = videoRef.current;
@@ -166,7 +193,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
 
   return <div className={`player-frame${controlsVisible ? " controls-visible" : " controls-hidden"}`} ref={frameRef} tabIndex={0} role="region" aria-label={`${label}播放器，空格播放暂停，方向键快进或调节音量，F 全屏`} onKeyDown={onKeyDown} onPointerMove={revealControls} onPointerDown={(event) => { touchReveal.current = event.pointerType === "touch" && !controlsVisible && event.target === videoRef.current; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }}>
     <div className="player-canvas" onClick={clickCanvas} onDoubleClick={(event) => { if (event.target === videoRef.current || event.target === event.currentTarget) { window.clearTimeout(clickTimer.current); fullscreen(); } }}>
-      {available && <video ref={videoRef} className="actual-video" preload="metadata" autoPlay={!media.isTest} playsInline poster={poster} src={media.format === "hls" ? undefined : media.url} aria-label={label}
+      {available && <video ref={videoRef} className="actual-video" preload="metadata" autoPlay={active !== false && (autoPlay ?? !media.isTest)} muted={muted} playsInline poster={poster} src={active === undefined && media.format !== "hls" ? media.url : undefined} aria-label={label}
         onLoadedMetadata={(event) => { setDuration(event.currentTarget.duration); setVideoError(""); }}
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
@@ -190,7 +217,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
       <span className="player-time">{formatTime(currentTime)} <i>/ {formatTime(duration)}</i></span>
       <div className="player-volume"><button type="button" onClick={toggleMute} disabled={!available} aria-label={muted ? "取消静音" : "静音视频"} title="静音（M）"><PlayerIcon name={muted || volume === 0 ? "mute" : "volume"} /></button><input aria-label="音量" type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} disabled={!available} onChange={(event) => changeVolume(event.target.value)} /></div>
       <select aria-label="播放速度" title="播放倍速" value={speed} disabled={!available} onChange={(event) => changeSpeed(event.target.value)}>{[0.5, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate === 1 ? "倍速" : `${rate}×`}</option>)}</select>
-      <button className="player-wide" type="button" aria-label={wide ? "退出宽屏" : "宽屏模式"} aria-pressed={wide} title={wide ? "退出宽屏" : "宽屏模式"} onClick={onWide}><PlayerIcon name="wide" /></button>
+      {onWide && <button className="player-wide" type="button" aria-label={wide ? "退出宽屏" : "宽屏模式"} aria-pressed={wide} title={wide ? "退出宽屏" : "宽屏模式"} onClick={onWide}><PlayerIcon name="wide" /></button>}
       <button type="button" onClick={fullscreen} aria-label={isFullscreen ? "退出播放器全屏" : "播放器全屏"} title={isFullscreen ? "退出全屏（F / Esc）" : "全屏（F）"}><PlayerIcon name={isFullscreen ? "restore" : "fullscreen"} /></button>
     </div>
   </div>;

@@ -1,0 +1,87 @@
+/* Shared vector identity; deliberately independent of the old .brand-mark shape. */
+.identity-brand.brand {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 7px;
+  color: #d64d7b;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  line-height: 1;
+  white-space: nowrap;
+  text-rendering: optimizeLegibility;
+}
+.identity-brand .identity-mark {
+  display: block;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  overflow: visible;
+  transition: transform 180ms ease;
+}
+.identity-brand .identity-wordmark {
+  display: block;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: 1.15;
+}
+.identity-brand:hover {
+  color: #c6416e;
+}
+.identity-brand:hover .identity-mark {
+  transform: rotate(-6deg);
+}
+.identity-brand.identity-brand-footer {
+  gap: 6px;
+  color: #aa6780;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.65px;
+}
+.identity-brand-footer .identity-mark {
+  width: 27px;
+  height: 27px;
+}
+@media (max-width: 760px) {
+  .identity-brand.brand {
+    gap: 5px;
+    font-size: 23px;
+    letter-spacing: -0.75px;
+  }
+  .identity-brand .identity-mark {
+    width: 28px;
+    height: 28px;
+  }
+  .identity-brand.identity-brand-footer {
+    font-size: 21px;
+  }
+  .identity-brand-footer .identity-mark {
+    width: 25px;
+    height: 25px;
+  }
+}
+@media (max-width: 360px) {
+  .identity-brand.brand {
+    gap: 4px;
+    font-size: 21px;
+    letter-spacing: -0.7px;
+  }
+  .identity-brand .identity-mark {
+    width: 25px;
+    height: 25px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .identity-brand .identity-mark {
+    transition: none;
+  }
+  .identity-brand:hover .identity-mark {
+    transform: none;
+  }
+}
