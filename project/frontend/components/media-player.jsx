@@ -10,7 +10,7 @@ function formatTime(value) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onNextLine, nextHref, autoPlay, initialMuted = false, active }) {
+export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onNextLine, nextHref, autoPlay, initialMuted = false, active, globalKeyboard = false }) {
   const frameRef = useRef(null);
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
@@ -160,14 +160,30 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
       else throw new Error("unavailable");
     } catch { setNotice("当前浏览器暂时无法全屏，可以使用宽屏模式。"); }
   }
+  useEffect(() => {
+    if (!globalKeyboard) return;
+    const handlePageKey = (event) => {
+      if (event.defaultPrevented || frameRef.current?.contains(event.target)) return;
+      onKeyDown(event);
+    };
+    document.addEventListener("keydown", handlePageKey);
+    return () => document.removeEventListener("keydown", handlePageKey);
+  }, [globalKeyboard, onKeyDown]);
+
   function onKeyDown(event) {
+    if (!available || videoError || active === false || !(event.target instanceof Element)) return;
     const key = event.key.toLowerCase();
+    const arrow = ["arrowleft", "arrowright", "arrowup", "arrowdown"].includes(key);
     const seekArrow = event.target.matches(".seek-range") &&
       (key === "arrowleft" || key === "arrowright");
+    const playerButtonKey = frameRef.current?.contains(event.target) &&
+      event.target.closest("button") && (arrow || ["k", "m", "f"].includes(key));
+    const control = event.target.closest('input,textarea,select,button,a,summary,[role="textbox"],[contenteditable]:not([contenteditable="false"])');
     if (event.altKey || event.ctrlKey || event.metaKey ||
-      (!seekArrow && event.target.closest("input,select,button,a,[contenteditable=true]"))) return;
+      (control && !seekArrow && !playerButtonKey)) return;
     if (![" ", "k", "arrowleft", "arrowright", "arrowup", "arrowdown", "m", "f"].includes(key)) return;
     event.preventDefault();
+    if (event.repeat && !arrow) return;
     revealControls();
     if (key === " " || key === "k") togglePlay();
     else if (key === "f") fullscreen();

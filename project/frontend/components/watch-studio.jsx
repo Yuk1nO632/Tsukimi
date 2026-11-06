@@ -195,6 +195,7 @@ export default function WatchStudio({
           <MediaPlayer
             key={`${testMode}:${retry}:${media.url || media.status}`}
             media={media}
+            globalKeyboard
             autoPlay={!testMode}
             label={
               testMode
@@ -270,7 +271,7 @@ export default function WatchStudio({
               <summary>播放帮助</summary>
               <div>
                 <p>
-                  点击画面播放 / 暂停，双击全屏。选中播放器后：空格暂停，← →
+                  点击画面播放 / 暂停，双击全屏。快捷键：空格播放 / 暂停，← →
                   跳转 5 秒，↑ ↓ 调节音量，M 静音，F 全屏。
                 </p>
                 <p>播放时控制栏会自动收起，移动鼠标或触碰画面即可唤回。</p>
