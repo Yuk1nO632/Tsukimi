@@ -195,7 +195,8 @@ export default function WatchStudio({
           <MediaPlayer
             key={`${testMode}:${retry}:${media.url || media.status}`}
             media={media}
-            poster={testMode ? undefined : anime.cover}
+            autoPlay={!testMode}
+            initialMuted={!testMode}
             label={
               testMode
                 ? "MDN 播放器测试短片"

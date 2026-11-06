@@ -1466,3 +1466,7 @@
     animation: none;
   }
 }
+
+.player-frame.is-initial-loading .player-controls {
+  visibility: hidden;
+}

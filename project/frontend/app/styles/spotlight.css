@@ -430,7 +430,3 @@
     transition: none;
   }
 }
-
-.spotlight-media .player-frame.is-initial-loading .player-controls {
-  visibility: hidden;
-}
