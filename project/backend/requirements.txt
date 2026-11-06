@@ -1,3 +1,6 @@
 fastapi==0.162.0
 uvicorn==0.54.0
 httpx==0.28.1
+pwdlib[argon2]==0.3.1
+tencentcloud-sdk-python-ses==3.1.135
+python-dotenv==1.2.4

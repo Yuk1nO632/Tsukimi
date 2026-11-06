@@ -20,3 +20,6 @@ dist/
 
 # Production preview does not overwrite the dev build
 .next-preview/
+
+# Local development mailbox contains one-time verification codes
+project/backend/data/dev-mail.jsonl

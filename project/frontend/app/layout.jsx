@@ -1,6 +1,7 @@
 import "./globals.css";
 import Link from "next/link";
 
+import { AccountProvider } from "../components/account-provider";
 import SiteHeader from "../components/site-header";
 import Brand from "../components/brand";
 import {
@@ -16,7 +17,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="zh-CN" data-scroll-behavior="smooth">
       <body>
-        <CollectionProvider>
+        <AccountProvider><CollectionProvider>
           <SiteHeader />
           <CollectionStatus />
           <main>{children}</main>
@@ -35,7 +36,7 @@ export default function RootLayout({ children }) {
               <Link href="/collection">我的追番</Link>
             </nav>
           </footer>
-        </CollectionProvider>
+        </CollectionProvider></AccountProvider>
       </body>
     </html>
   );

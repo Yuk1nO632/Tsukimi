@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAccount } from "./account-provider";
 import { collectionRequest, requestJson } from "../lib/api";
 
 const CollectionContext = createContext(null);
@@ -25,6 +26,11 @@ function validate(data) {
 }
 
 export function CollectionProvider({ children }) {
+  const account = useAccount();
+  return <CollectionState key={account.scope || "connecting"} account={account}>{children}</CollectionState>;
+}
+
+function CollectionState({ children, account }) {
   const [collectionItems, setCollectionItems] = useState([]);
   const [status, setStatus] = useState("loading");
   const [loadError, setLoadError] = useState("");
@@ -34,8 +40,9 @@ export function CollectionProvider({ children }) {
   const readVersion = useRef(0);
   const favoriteIds = collectionItems.map((item) => item.anime.id);
   const reloadCollection = useCallback(async (signal) => {
+    if (!account.ready) return;
     const version = ++readVersion.current;
-    setStatus("loading");
+    setStatus((previous) => previous === "ready" ? previous : "loading");
     setLoadError("");
     try {
       const data = validate(await requestJson("/api/collection", { signal }));
@@ -47,11 +54,19 @@ export function CollectionProvider({ children }) {
       setLoadError(error.message);
       setStatus("error");
     }
-  }, []);
+  }, [account.ready]);
   useEffect(() => {
     const controller = new AbortController();
     void reloadCollection(controller.signal);
-    return () => controller.abort();
+    const refresh = () => { if (document.visibilityState === "visible" && !savingRef.current) void reloadCollection(); };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("tsukimi-library-refresh", refresh);
+    return () => {
+      controller.abort();
+      ++readVersion.current;
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("tsukimi-library-refresh", refresh);
+    };
   }, [reloadCollection]);
   useEffect(() => {
     if (!feedback) return;
@@ -65,7 +80,8 @@ export function CollectionProvider({ children }) {
     setPendingId(id);
     setFeedback("");
     try {
-      const items = validate(await collectionRequest(id, nextStatus));
+      const items = validate(await collectionRequest(id, nextStatus, account.scope));
+      ++readVersion.current;
       // Only confirmed database results replace the displayed state.
       setCollectionItems(items);
       setFeedback(

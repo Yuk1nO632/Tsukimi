@@ -1,5 +1,5 @@
-"""SQLite persistence: anonymous sessions, collection states and public metadata cache."""
-from contextlib import contextmanager
+"""SQLite persistence for anonymous/account libraries and public metadata."""
+from contextlib import closing, contextmanager
 import json
 from pathlib import Path
 import sqlite3
@@ -22,6 +22,13 @@ class Database:
 
     def initialize(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # A one-time SQLite backup precedes the additive account migration.
+        backup = self.path.with_suffix(".pre-accounts.db")
+        if self.path.exists() and not backup.exists():
+            with closing(sqlite3.connect(self.path)) as source:
+                if source.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='owners'").fetchone() is None:
+                    with closing(sqlite3.connect(backup)) as destination:
+                        source.backup(destination)
         with self.connect() as connection:
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -53,40 +60,117 @@ class Database:
                 connection.execute("ALTER TABLE favorites ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
             connection.execute("UPDATE favorites SET updated_at = CASE WHEN created_at > 1000000000000 THEN created_at / 1000000000 ELSE created_at END WHERE updated_at = 0")
 
-    def session_exists(self, token_hash: str) -> bool:
-        with self.connect() as connection:
-            return connection.execute("SELECT 1 FROM sessions WHERE token_hash = ? AND expires_at > ?",
-                                      (token_hash, int(time.time()))).fetchone() is not None
+            self._initialize_accounts(connection)
 
-    def create_session(self, token_hash: str, expires_at: int):
-        with self.connect() as connection:
-            connection.execute("INSERT INTO sessions (token_hash, expires_at) VALUES (?, ?)", (token_hash, expires_at))
+    def _initialize_accounts(self, connection):
+        # Add new tables and copy legacy records once. Legacy tables are retained.
+        connection.execute("CREATE TABLE IF NOT EXISTS owners (id TEXT PRIMARY KEY)")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(sessions)")}
+        if "owner_id" not in columns:
+            connection.execute("ALTER TABLE sessions ADD COLUMN owner_id TEXT REFERENCES owners(id)")
+        connection.execute("INSERT OR IGNORE INTO owners SELECT token_hash FROM sessions WHERE owner_id IS NULL")
+        connection.execute("UPDATE sessions SET owner_id = token_hash WHERE owner_id IS NULL")
+        statements = [
+            """CREATE TABLE IF NOT EXISTS owned_favorites (
+                owner_id TEXT NOT NULL REFERENCES owners(id), anime_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'wish', updated_at INTEGER NOT NULL,
+                PRIMARY KEY(owner_id, anime_id))""",
+            """CREATE TABLE IF NOT EXISTS owned_source_bindings (
+                owner_id TEXT NOT NULL REFERENCES owners(id), anime_id TEXT NOT NULL, source_id INTEGER NOT NULL,
+                PRIMARY KEY(owner_id, anime_id))""",
+            """CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY REFERENCES owners(id), email TEXT NOT NULL UNIQUE,
+                nickname TEXT NOT NULL, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL)""",
+            """CREATE TABLE IF NOT EXISTS watch_progress (
+                owner_id TEXT NOT NULL REFERENCES owners(id), anime_id TEXT NOT NULL,
+                episode INTEGER NOT NULL, position REAL NOT NULL, duration REAL NOT NULL,
+                source_id INTEGER, line_id INTEGER, completed INTEGER NOT NULL DEFAULT 0,
+                revision INTEGER NOT NULL, updated_at INTEGER NOT NULL, operation_id TEXT NOT NULL,
+                PRIMARY KEY(owner_id, anime_id))""",
+            """CREATE TABLE IF NOT EXISTS email_codes (
+                email TEXT NOT NULL, purpose TEXT NOT NULL, digest TEXT NOT NULL,
+                expires_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+                sent_at INTEGER NOT NULL, generation TEXT NOT NULL, PRIMARY KEY(email, purpose))""",
+            "CREATE TABLE IF NOT EXISTS app_secrets (name TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS rate_limits (bucket TEXT PRIMARY KEY, started_at INTEGER NOT NULL, count INTEGER NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY)",
+            """CREATE TABLE IF NOT EXISTS pending_imports (
+                token_hash TEXT PRIMARY KEY REFERENCES sessions(token_hash) ON DELETE CASCADE,
+                anonymous_owner TEXT NOT NULL REFERENCES owners(id))""",
+            "CREATE INDEX IF NOT EXISTS sessions_owner ON sessions(owner_id)",
+        ]
+        for statement in statements:
+            connection.execute(statement)
+        if connection.execute("SELECT 1 FROM migrations WHERE name = 'account_owners'").fetchone() is None:
+            connection.execute("INSERT OR IGNORE INTO owned_favorites SELECT * FROM favorites")
+            connection.execute("INSERT OR IGNORE INTO owned_source_bindings SELECT * FROM source_bindings")
+            connection.execute("INSERT INTO migrations VALUES ('account_owners')")
 
-    def list_favorites(self, session_id: str) -> list[str]:
+    def user(self, owner_id):
         with self.connect() as connection:
-            rows = connection.execute("SELECT anime_id FROM favorites WHERE session_id = ? ORDER BY created_at, anime_id", (session_id,)).fetchall()
+            row = connection.execute("SELECT id, email, nickname FROM users WHERE id = ?", (owner_id,)).fetchone()
+        return dict(zip(("id", "email", "nickname"), row)) if row else None
+
+    def progress(self, owner_id, anime_id):
+        with self.connect() as connection:
+            return self.progress_row(connection, owner_id, anime_id)
+
+    @staticmethod
+    def progress_row(connection, owner_id, anime_id):
+        cursor = connection.execute("SELECT * FROM watch_progress WHERE owner_id = ? AND anime_id = ?", (owner_id, anime_id))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return {column[0]: value for column, value in zip(cursor.description, row) if column[0] != "owner_id"}
+
+    def list_progress(self, owner_id):
+        with self.connect() as connection:
+            rows = connection.execute("""SELECT p.anime_id, c.data FROM watch_progress p
+                JOIN catalog_cache c ON c.anime_id = p.anime_id WHERE p.owner_id = ?
+                ORDER BY p.updated_at DESC LIMIT 30""", (owner_id,)).fetchall()
+            return [{**self.progress_row(connection, owner_id, anime_id), "anime": json.loads(data)} for anime_id, data in rows]
+
+    def session_owner(self, token_hash):
+        with self.connect() as connection:
+            row = connection.execute("SELECT owner_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
+                                     (token_hash, int(time.time()))).fetchone()
+        return row[0] if row else None
+
+    def session_exists(self, token_hash):
+        return self.session_owner(token_hash) is not None
+
+    def create_session(self, token_hash, expires_at, owner_id=None):
+        owner_id = owner_id or token_hash
+        with self.connect() as connection:
+            connection.execute("INSERT OR IGNORE INTO owners VALUES (?)", (owner_id,))
+            connection.execute("INSERT INTO sessions (token_hash, expires_at, owner_id) VALUES (?, ?, ?)",
+                               (token_hash, expires_at, owner_id))
+
+    def list_favorites(self, owner_id: str) -> list[str]:
+        with self.connect() as connection:
+            rows = connection.execute("SELECT anime_id FROM owned_favorites WHERE owner_id = ? ORDER BY created_at, anime_id", (owner_id,)).fetchall()
         return [row[0] for row in rows]
 
-    def set_favorite(self, session_id: str, anime_id: str, saved: bool):
+    def set_favorite(self, owner_id: str, anime_id: str, saved: bool):
         with self.connect() as connection:
             if saved:
-                connection.execute("INSERT OR IGNORE INTO favorites (session_id, anime_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                                   (session_id, anime_id, time.time_ns(), int(time.time())))
+                connection.execute("INSERT OR IGNORE INTO owned_favorites (owner_id, anime_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                                   (owner_id, anime_id, time.time_ns(), int(time.time())))
             else:
-                connection.execute("DELETE FROM favorites WHERE session_id = ? AND anime_id = ?", (session_id, anime_id))
+                connection.execute("DELETE FROM owned_favorites WHERE owner_id = ? AND anime_id = ?", (owner_id, anime_id))
 
-    def set_collection_status(self, session_id: str, anime_id: str, status: str):
+    def set_collection_status(self, owner_id: str, anime_id: str, status: str):
         with self.connect() as connection:
-            connection.execute("""INSERT INTO favorites (session_id, anime_id, created_at, status, updated_at)
-                VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id, anime_id)
+            connection.execute("""INSERT INTO owned_favorites (owner_id, anime_id, created_at, status, updated_at)
+                VALUES (?, ?, ?, ?, ?) ON CONFLICT(owner_id, anime_id)
                 DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at""",
-                (session_id, anime_id, time.time_ns(), status, int(time.time())))
+                (owner_id, anime_id, time.time_ns(), status, int(time.time())))
 
-    def list_collection(self, session_id: str):
+    def list_collection(self, owner_id: str):
         with self.connect() as connection:
-            rows = connection.execute("""SELECT c.data, f.status, f.updated_at FROM favorites f
-                JOIN catalog_cache c ON c.anime_id = f.anime_id WHERE f.session_id = ?
-                ORDER BY f.updated_at DESC, f.created_at DESC, f.anime_id""", (session_id,)).fetchall()
+            rows = connection.execute("""SELECT c.data, f.status, f.updated_at FROM owned_favorites f
+                JOIN catalog_cache c ON c.anime_id = f.anime_id WHERE f.owner_id = ?
+                ORDER BY f.updated_at DESC, f.created_at DESC, f.anime_id""", (owner_id,)).fetchall()
         return [{"anime": json.loads(data), "status": status, "updated_at": updated_at} for data, status, updated_at in rows]
 
     def cache_anime(self, anime: dict, fetched_at: int, seed=False):
@@ -111,20 +195,20 @@ class Database:
                    OR COALESCE(json_extract(excluded.data, '$.detailComplete'), 0) = 1""",
                 [(anime["id"], json.dumps(anime, ensure_ascii=False), fetched_at) for anime in items])
 
-    def source_binding(self, anime_id, session_id=None):
+    def source_binding(self, anime_id, owner_id=None):
         with self.connect() as connection:
-            if session_id:
-                saved = connection.execute("SELECT source_id FROM source_bindings WHERE session_id = ? AND anime_id = ?", (session_id, anime_id)).fetchone()
+            if owner_id:
+                saved = connection.execute("SELECT source_id FROM owned_source_bindings WHERE owner_id = ? AND anime_id = ?", (owner_id, anime_id)).fetchone()
                 if saved:
                     return saved[0], "saved"
             cached = connection.execute("SELECT source_id FROM auto_source_bindings WHERE anime_id = ? AND matched_at > ?", (anime_id, int(time.time()) - 86400)).fetchone()
         return (cached[0], "automatic") if cached else (None, None)
 
-    def save_source_binding(self, anime_id, source_id, session_id=None):
+    def save_source_binding(self, anime_id, source_id, owner_id=None):
         with self.connect() as connection:
-            if session_id:
-                connection.execute("""INSERT INTO source_bindings VALUES (?, ?, ?)
-                    ON CONFLICT(session_id, anime_id) DO UPDATE SET source_id = excluded.source_id""", (session_id, anime_id, source_id))
+            if owner_id:
+                connection.execute("""INSERT INTO owned_source_bindings VALUES (?, ?, ?)
+                    ON CONFLICT(owner_id, anime_id) DO UPDATE SET source_id = excluded.source_id""", (owner_id, anime_id, source_id))
             else:
                 connection.execute("""INSERT INTO auto_source_bindings VALUES (?, ?, ?)
                     ON CONFLICT(anime_id) DO UPDATE SET source_id = excluded.source_id, matched_at = excluded.matched_at""", (anime_id, source_id, int(time.time())))

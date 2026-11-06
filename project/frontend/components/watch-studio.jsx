@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { animeList } from "../lib/anime";
 import { readPlayback, rememberSource } from "../lib/playback-api";
+import useWatchProgress from "../lib/use-watch-progress";
+import { progressUrl } from "./continue-watching";
+import { useAccount } from "./account-provider";
 import FavoriteButton from "./favorite-button";
 import MediaPlayer from "./media-player";
 import SourceMatcher from "./source-matcher";
@@ -17,12 +20,14 @@ export default function WatchStudio({
   selectedSourceId,
   selectedLineId,
 }) {
+  const account = useAccount();
   const [wide, setWide] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [testMode, setTestMode] = useState(false);
   const [retry, setRetry] = useState(0);
   const [copyMessage, setCopyMessage] = useState("");
   const [source, setSource] = useState({ status: "loading" });
+  const progress = useWatchProgress(anime.id, selectedEpisode, source, !testMode);
   const helpRef = useRef(null);
   const sourcePanelRef = useRef(null);
   const matcherDetailsRef = useRef(null);
@@ -38,7 +43,7 @@ export default function WatchStudio({
   useEffect(() => () => saveSourceController.current?.abort(), []);
 
   useEffect(() => {
-    if (testMode) return;
+    if (testMode || !account.ready) return;
     const controller = new AbortController();
     setSource({ status: "loading" });
     readPlayback(
@@ -60,6 +65,7 @@ export default function WatchStudio({
       });
     return () => controller.abort();
   }, [
+    account.ready,
     anime.id,
     selectedEpisode,
     selectedSourceId,
@@ -160,7 +166,7 @@ export default function WatchStudio({
   }
   const media = testMode
     ? { status: "ready", url: "/media/flower.mp4", isTest: true }
-    : source;
+    : progress.loading ? { status: "loading" } : source;
   const ready = source.status === "ready";
   const sourceLabel =
     source.status === "loading"
@@ -195,6 +201,8 @@ export default function WatchStudio({
           <MediaPlayer
             key={`${testMode}:${retry}:${media.url || media.status}`}
             media={media}
+            initialPosition={testMode ? 0 : progress.position}
+            onProgress={testMode ? undefined : progress.report}
             globalKeyboard
             autoPlay={!testMode}
             label={
@@ -211,6 +219,13 @@ export default function WatchStudio({
             }
             nextHref={nextHref}
           />
+          {!testMode && <div className={`watch-progress-status${progress.error ? " has-error" : ""}`} role="status">
+            <span>{progress.message}</span>
+            {progress.conflict ? <div>
+              <button className="text-button" onClick={() => { window.location.assign(progressUrl(progress.conflict)); }}>使用云端进度</button>
+              <button className="text-button" onClick={progress.keepLocal}>以本机进度继续</button>
+            </div> : progress.error && <button className="text-button" onClick={progress.retry}>重试同步</button>}
+          </div>}
           <div className="watch-now">
             <div>
               <span className="watch-now-kicker">

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useCollection } from "./collection-provider";
+import { useAccount } from "./account-provider";
 import HeaderSearch from "./header-search";
 import Brand from "./brand";
 import { Suspense } from "react";
@@ -10,6 +11,7 @@ import { Suspense } from "react";
 export default function SiteHeader() {
   const { favoriteIds, status } = useCollection();
 
+  const account = useAccount();
   const pathname = usePathname();
   const links = [
     ["/", "首页"],
@@ -58,6 +60,10 @@ export default function SiteHeader() {
           <span aria-hidden="true">♡</span>
           <span className="saved-text">追番</span>
           <strong>{status === "ready" ? favoriteIds.length : "—"}</strong>
+        </Link>
+        <Link href="/account" className="header-account" aria-label={account.user ? "我的账号" : "登录或注册"}>
+          <span aria-hidden="true">{account.user?.nickname.slice(0, 1) || "☾"}</span>
+          <span>{account.user?.nickname || "登录"}</span>
         </Link>
       </div>
       <nav className="mobile-navigation" aria-label="手机主导航">

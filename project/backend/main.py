@@ -1,20 +1,22 @@
-"""Anonymous collections, public anime metadata and aggregate playback."""
+"""Account/anonymous libraries, watch progress and aggregate playback."""
 
 from contextlib import asynccontextmanager
-import hashlib
 import json
 import logging
 import os
 from pathlib import Path
 from typing import Literal
-import re
-import secrets
 import sqlite3
-import time
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+from sessions import Sessions, COOKIE_NAME
+from accounts import create_account_router
+from mailer import Mailer
+from progress import create_progress_router
 
 from database import Database
 from catalog import BangumiClient, Catalog, CatalogError, create_catalog_router
@@ -23,8 +25,7 @@ from source_errors import SourceError
 from anich import AniChSource
 
 BACKEND_ROOT = Path(__file__).resolve().parent
-COOKIE_NAME = "tsukimi_session"
-SESSION_SECONDS = 30 * 24 * 60 * 60
+load_dotenv(BACKEND_ROOT / ".env")
 logger = logging.getLogger("tsukimi")
 
 
@@ -37,7 +38,7 @@ class CollectionUpdate(BaseModel):
 
 
 def create_app(database_path: Path | None = None, catalog_path: Path | None = None,
-               allowed_origins: set[str] | None = None, playback_source: AniChSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
+               allowed_origins: set[str] | None = None, playback_source: AniChSource | None = None, metadata_source: BangumiClient | None = None, mail_sender=None) -> FastAPI:
     store = Database(database_path or Path(os.getenv("TSUKIMI_DATABASE", str(BACKEND_ROOT / "data/tsukimi.db"))))
     metadata_provider = metadata_source or BangumiClient()
     playback_provider = playback_source or AniChSource()
@@ -46,6 +47,9 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         os.getenv("TSUKIMI_ALLOWED_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8000,http://localhost:8000").split(",")
     )
     secure_cookie = os.getenv("TSUKIMI_COOKIE_SECURE", "0") == "1"
+
+    sessions = Sessions(store, secure_cookie)
+    mailer = mail_sender or Mailer()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
@@ -83,6 +87,10 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
             origin = request.headers.get("origin")
             if request.headers.get("sec-fetch-site") == "cross-site" or (origin is not None and origin not in origins):
                 return JSONResponse(status_code=403, content={"detail": "该请求来源不被允许。"}, headers={"Cache-Control": "no-store"})
+        if request.method in {"PUT", "DELETE", "POST", "PATCH"}:
+            expected_scope = request.headers.get("x-tsukimi-scope")
+            if expected_scope and expected_scope != session_scope(request):
+                return JSONResponse(status_code=409, content={"detail": "登录身份已变化，请重新读取页面。"}, headers={"Cache-Control": "no-store"})
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -92,31 +100,15 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         logger.error("SQLite operation failed: %s", type(exception).__name__)
         return JSONResponse(status_code=503, content={"detail": "追番记录暂时无法读取或保存，请稍后重试。"})
 
-    def current_session(request: Request) -> str | None:
-        token = request.cookies.get(COOKIE_NAME, "")
-        if re.fullmatch(r"[A-Za-z0-9_-]{43}", token) is None:
-            return None
-        token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
-        return token_hash if store.session_exists(token_hash) else None
+    current_session = sessions.current
+    require_session = sessions.require
+    ensure_session = sessions.ensure
+    account_router, session_scope = create_account_router(store, sessions, mailer)
+    application.include_router(account_router)
+    application.include_router(create_progress_router(store, sessions, session_scope))
 
-    def require_session(request: Request) -> str:
-        session_id = current_session(request)
-        if session_id is None:
-            raise HTTPException(status_code=401, detail="追番会话已失效，请重新读取收藏后重试。")
-        return session_id
-
-    def favorites(session_id: str) -> FavoriteList:
-        return FavoriteList(favorite_ids=store.list_favorites(session_id))
-
-    def ensure_session(request: Request, response: Response):
-        session_id = current_session(request)
-        if session_id is None:
-            token = secrets.token_urlsafe(32)
-            session_id = hashlib.sha256(token.encode("ascii")).hexdigest()
-            store.create_session(session_id, int(time.time()) + SESSION_SECONDS)
-            response.set_cookie(COOKIE_NAME, token, max_age=SESSION_SECONDS, httponly=True,
-                                secure=secure_cookie, samesite="lax", path="/api")
-        return session_id
+    def favorites(owner_id):
+        return FavoriteList(favorite_ids=store.list_favorites(owner_id))
 
     @application.get("/api/health")
     def health():
@@ -126,8 +118,8 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
     def read_favorites(request: Request, response: Response):
         return favorites(ensure_session(request, response))
 
-    def collection(session_id):
-        return {"items": store.list_collection(session_id)}
+    def collection(owner_id):
+        return {"items": store.list_collection(owner_id)}
 
     @application.get("/api/collection")
     def read_collection(request: Request, response: Response):
@@ -135,31 +127,31 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
 
     @application.put("/api/collection/{anime_id}")
     def update_collection(anime_id: str, payload: CollectionUpdate, request: Request):
-        session_id = require_session(request)
+        owner_id = require_session(request)
         application.state.catalog.get(anime_id)
-        store.set_collection_status(session_id, anime_id, payload.status)
-        return collection(session_id)
+        store.set_collection_status(owner_id, anime_id, payload.status)
+        return collection(owner_id)
 
     @application.delete("/api/collection/{anime_id}")
     def delete_collection(anime_id: str, request: Request):
-        session_id = require_session(request)
-        store.set_favorite(session_id, anime_id, saved=False)
-        return collection(session_id)
+        owner_id = require_session(request)
+        store.set_favorite(owner_id, anime_id, saved=False)
+        return collection(owner_id)
 
     @application.put("/api/favorites/{anime_id}", response_model=FavoriteList)
     def save_favorite(anime_id: str, request: Request):
-        session_id = require_session(request)
+        owner_id = require_session(request)
         application.state.catalog.get(anime_id)
-        store.set_favorite(session_id, anime_id, saved=True)
-        return favorites(session_id)
+        store.set_favorite(owner_id, anime_id, saved=True)
+        return favorites(owner_id)
 
     @application.delete("/api/favorites/{anime_id}", response_model=FavoriteList)
     def remove_favorite(anime_id: str, request: Request):
-        session_id = require_session(request)
+        owner_id = require_session(request)
         if not store.cached_anime(anime_id):
             raise HTTPException(status_code=404, detail="这部番剧尚未收录。")
-        store.set_favorite(session_id, anime_id, saved=False)
-        return favorites(session_id)
+        store.set_favorite(owner_id, anime_id, saved=False)
+        return favorites(owner_id)
 
     application.include_router(create_playback_router(playback_provider, current_session, require_session))
     return application

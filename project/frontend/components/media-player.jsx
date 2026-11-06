@@ -10,7 +10,30 @@ function formatTime(value) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onNextLine, nextHref, autoPlay, initialMuted = false, active, globalKeyboard = false }) {
+export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onNextLine, nextHref, autoPlay, initialMuted = false, active, globalKeyboard = false, initialPosition = 0, onProgress }) {
+  const progressCallback = useRef(onProgress);
+  progressCallback.current = onProgress;
+  const startedRef = useRef(false);
+  const restoredRef = useRef(false);
+  function reportProgress(force = false, complete = false) {
+    const video = videoRef.current;
+    if (
+      !progressCallback.current || !startedRef.current || !restoredRef.current ||
+      media.isTest || !video || !Number.isFinite(video.duration) || video.duration <= 0
+    ) return;
+    progressCallback.current({
+      position: video.currentTime,
+      duration: video.duration,
+      completed: complete || video.ended,
+    }, force);
+  }
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      if (video && progressCallback.current && startedRef.current && restoredRef.current && !media.isTest && Number.isFinite(video.duration) && video.duration > 0)
+        progressCallback.current({ position: video.currentTime, duration: video.duration, completed: video.ended }, true);
+    };
+  }, [media.isTest]);
   const frameRef = useRef(null);
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
@@ -130,6 +153,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   function seek(value) {
     const video = videoRef.current;
     if (!video || !Number.isFinite(video.duration)) return;
+    startedRef.current = true;
     video.currentTime = Math.max(0, Math.min(Number(value), video.duration));
     setCurrentTime(video.currentTime);
     revealControls();
@@ -221,12 +245,20 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     <div className="player-canvas" onClick={clickCanvas} onDoubleClick={(event) => { if (event.target === videoRef.current || event.target === event.currentTarget) { window.clearTimeout(clickTimer.current); fullscreen(); } }}>
       {available && <video ref={videoRef} className="actual-video" preload="metadata" autoPlay={active !== false && shouldAutoPlay} muted={muted} playsInline poster={poster} src={active === undefined && media.format !== "hls" ? media.url : undefined} aria-label={label}
         onLoadedData={() => setHasFrame(true)} onEmptied={() => setHasFrame(false)}
-        onLoadedMetadata={(event) => { setDuration(event.currentTarget.duration); setVideoError(""); }}
+        onLoadedMetadata={(event) => {
+          const video = event.currentTarget;
+          setDuration(video.duration); setVideoError("");
+          if (!restoredRef.current && Number.isFinite(video.duration)) {
+            if (initialPosition > 0) video.currentTime = Math.min(initialPosition, Math.max(0, video.duration - 1));
+            restoredRef.current = true;
+          }
+        }}
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-        onPlay={() => { setPlaying(true); setEnded(false); }} onPause={() => setPlaying(false)}
+        onTimeUpdate={(event) => { setCurrentTime(event.currentTarget.currentTime); reportProgress(); }}
+        onSeeked={() => reportProgress(true)}
+        onPlay={() => { startedRef.current = true; setPlaying(true); setEnded(false); }} onPause={() => { setPlaying(false); reportProgress(true); }}
         onWaiting={() => setWaiting(true)} onPlaying={() => { setWaiting(false); setPlaying(true); }}
-        onCanPlay={() => setWaiting(false)} onEnded={() => { setPlaying(false); setWaiting(false); setEnded(true); }}
+        onCanPlay={() => setWaiting(false)} onEnded={() => { setPlaying(false); setWaiting(false); setEnded(true); reportProgress(true, true); }}
         onVolumeChange={(event) => { setVolume(event.currentTarget.volume); setMuted(event.currentTarget.muted); }}
         onRateChange={(event) => setSpeed(event.currentTarget.playbackRate)} onError={onError} />}
       <div className="player-topline"><span className="player-watermark">☾ TSUKIMI</span><span className="player-now-title">{label}</span></div>

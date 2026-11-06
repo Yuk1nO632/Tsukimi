@@ -1,4 +1,4 @@
-"""Resolve a source automatically; remember explicit browser choices without storing signed URLs."""
+"""Resolve sources and remember owner-specific choices without storing signed URLs."""
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from source_errors import SourceError
@@ -25,11 +25,11 @@ def create_playback_router(provider, current_session, require_session):
 
     @router.put(f"/sources/{provider_name}/bindings/{{anime_id}}")
     def remember(anime_id: str, payload: SourceBinding, request: Request):
-        session_id = require_session(request)
+        owner_id = require_session(request)
         anime = request.app.state.catalog.get(anime_id)
         provider.detail(payload.source_anime_id)
         provider.validate_binding(anime, payload.source_anime_id)
-        request.app.state.store.save_source_binding(binding_key(anime_id), payload.source_anime_id, session_id)
+        request.app.state.store.save_source_binding(binding_key(anime_id), payload.source_anime_id, owner_id)
         return {"anime_id": anime_id, "source_anime_id": payload.source_anime_id}
 
     @router.get("/playback/{anime_id}")
@@ -44,8 +44,8 @@ def create_playback_router(provider, current_session, require_session):
         if anime["episodes"] > 0 and episode > anime["episodes"]:
             raise HTTPException(status_code=404, detail="这部番剧没有所选集数。")
         store = request.app.state.store
-        session_id = current_session(request)
-        source_id, kind = store.source_binding(binding_key(anime_id), session_id)
+        owner_id = current_session(request)
+        source_id, kind = store.source_binding(binding_key(anime_id), owner_id)
         if source_anime_id:
             source_id, kind = source_anime_id, "explicit"
         if source_id is None:

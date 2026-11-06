@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { useState } from "react";
 import useApi from "../lib/use-api";
+import ContinueWatching from "./continue-watching";
 import FavoriteButton from "./favorite-button";
 import { CollectionStatusPicker } from "./collection-provider";
 
@@ -78,6 +79,7 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
             <Link prefetch={false} className="solid-button" href={watch()}>
               前往播放 →
             </Link>
+            <ContinueWatching animeId={anime.id} />
             <CollectionStatusPicker anime={anime} />
             <FavoriteButton animeId={anime.id} title={anime.title} />
           </div>

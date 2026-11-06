@@ -22,6 +22,7 @@ export async function requestJson(path, options = {}) {
         : "请求未完成，请稍后重试。",
     );
     error.status = response.status;
+    error.data = data;
     throw error;
   }
   if (!data || typeof data !== "object")
@@ -29,14 +30,14 @@ export async function requestJson(path, options = {}) {
   return data;
 }
 
-export function collectionRequest(id, status) {
+export function collectionRequest(id, status, scope) {
   return requestJson(
     `/api/collection/${encodeURIComponent(id)}`,
     status === null
-      ? { method: "DELETE" }
+      ? { method: "DELETE", headers: { "X-Tsukimi-Scope": scope } }
       : {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Tsukimi-Scope": scope },
           body: JSON.stringify({ status }),
         },
   );
