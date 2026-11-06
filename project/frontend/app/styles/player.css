@@ -1470,3 +1470,14 @@
 .player-frame.is-initial-loading .player-controls {
   visibility: hidden;
 }
+
+/* Keep keyboard focus on the seek thumb instead of outlining the full track. */
+.player-controls .seek-range:focus-visible {
+  outline: none;
+}
+.seek-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px #ffffff30;
+}
+.seek-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px #ffffff30;
+}

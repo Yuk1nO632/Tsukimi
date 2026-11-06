@@ -196,7 +196,6 @@ export default function WatchStudio({
             key={`${testMode}:${retry}:${media.url || media.status}`}
             media={media}
             autoPlay={!testMode}
-            initialMuted={!testMode}
             label={
               testMode
                 ? "MDN 播放器测试短片"

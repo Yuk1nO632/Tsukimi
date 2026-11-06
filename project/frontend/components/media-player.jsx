@@ -161,16 +161,22 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     } catch { setNotice("当前浏览器暂时无法全屏，可以使用宽屏模式。"); }
   }
   function onKeyDown(event) {
-    if (event.target.closest("input,select,button,a,[contenteditable=true]") || event.altKey || event.ctrlKey || event.metaKey) return;
     const key = event.key.toLowerCase();
+    const seekArrow = event.target.matches(".seek-range") &&
+      (key === "arrowleft" || key === "arrowright");
+    if (event.altKey || event.ctrlKey || event.metaKey ||
+      (!seekArrow && event.target.closest("input,select,button,a,[contenteditable=true]"))) return;
     if (![" ", "k", "arrowleft", "arrowright", "arrowup", "arrowdown", "m", "f"].includes(key)) return;
     event.preventDefault();
     revealControls();
     if (key === " " || key === "k") togglePlay();
     else if (key === "f") fullscreen();
     else if (key === "m") toggleMute();
-    else if (key === "arrowleft" || key === "arrowright") { seek((videoRef.current?.currentTime || 0) + (key === "arrowright" ? 5 : -5)); setNotice(key === "arrowright" ? "快进 5 秒" : "后退 5 秒"); }
-    else changeVolume((videoRef.current?.volume || 0) + (key === "arrowup" ? 0.05 : -0.05));
+    else if (key === "arrowleft" || key === "arrowright") {
+      const offset = key === "arrowright" ? 5 : -5;
+      seek((videoRef.current?.currentTime || 0) + offset);
+      setNotice(offset > 0 ? "快进 5 秒" : "后退 5 秒");
+    } else changeVolume((videoRef.current?.volume || 0) + (key === "arrowup" ? 0.05 : -0.05));
   }
   function clickCanvas(event) {
     if (event.target !== videoRef.current && event.target !== event.currentTarget) return;
@@ -216,7 +222,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     </div>
     {notice && <div className="player-toast" role="status">{notice}</div>}
     <div className="player-controls real-player-controls" ref={controlsRef} onPointerEnter={() => { controlsHovered.current = true; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }} onFocusCapture={revealControls} onBlurCapture={revealControls}>
-      <input className="seek-range" aria-label="播放进度" aria-valuetext={`${formatTime(currentTime)}，总时长 ${formatTime(duration)}`} style={{ "--seek-fill": `${percent}%` }} type="range" min="0" max={duration || 1} step="0.1" value={Math.min(currentTime, duration || 1)} disabled={!available || !duration || !!videoError} onChange={(event) => seek(event.target.value)} />
+      <input className="seek-range" aria-label="播放进度" title="左右方向键快进或后退 5 秒" aria-valuetext={`${formatTime(currentTime)}，总时长 ${formatTime(duration)}`} style={{ "--seek-fill": `${percent}%` }} type="range" min="0" max={duration || 1} step="0.1" value={Math.min(currentTime, duration || 1)} disabled={!available || !duration || !!videoError} onChange={(event) => seek(event.target.value)} />
       <button type="button" disabled={!available || !!videoError} onClick={togglePlay} aria-label={playing ? "暂停视频" : "播放视频"} title="播放 / 暂停（空格）"><PlayerIcon name={playing ? "pause" : "play"} /></button>
       {nextHref && !media.isTest && <Link className="player-next" href={nextHref} scroll={false} aria-label="播放下一集" title="下一集"><PlayerIcon name="next" size={18} /></Link>}
       <span className="player-time">{formatTime(currentTime)} <i>/ {formatTime(duration)}</i></span>
