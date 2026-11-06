@@ -180,12 +180,16 @@ export default function HomeSpotlight({ items = [] }) {
     const rail = selectionsRef.current;
     const button = rail?.querySelector('[aria-pressed="true"]');
     if (!button) return;
-    rail.scrollTo({
+    const revealSelection = () => rail.scrollTo({
       left: button.offsetLeft - (rail.clientWidth - button.offsetWidth) / 2,
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
         ? "instant"
         : "smooth",
     });
+    revealSelection();
+    const observer = new ResizeObserver(revealSelection);
+    observer.observe(rail);
+    return () => observer.disconnect();
   }, [selected?.id, items.length]);
 
   if (!selected) return null;

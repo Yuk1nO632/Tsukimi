@@ -37,12 +37,16 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
     const rail = tabsRef.current;
     const button = rail?.children[activeIndex % items.length];
     if (!button) return;
-    rail.scrollTo({
+    const revealSelection = () => rail.scrollTo({
       left: button.offsetLeft - (rail.clientWidth - button.offsetWidth) / 2,
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
         ? "instant"
         : "smooth",
     });
+    revealSelection();
+    const observer = new ResizeObserver(revealSelection);
+    observer.observe(rail);
+    return () => observer.disconnect();
   }, [activeIndex, items.length]);
 
   if (!active) return null;
