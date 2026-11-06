@@ -240,9 +240,15 @@
 }
 .spotlight-selections {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  position: relative;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 30px) / 4);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff55 transparent;
+  padding-bottom: 7px;
   gap: 10px;
-  margin-top: 25px;
+  margin-top: 12px;
 }
 .spotlight-selections > button {
   min-width: 0;
@@ -429,4 +435,31 @@
   .spotlight-thumb img {
     transition: none;
   }
+}
+
+.spotlight-navigation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  color: #e0eeec;
+  font-size: 11px;
+}
+.spotlight-navigation > span {
+  margin-right: auto;
+  font-variant-numeric: tabular-nums;
+}
+.spotlight-navigation button {
+  border: 1px solid #ffffff33;
+  background: #ffffff0b;
+  color: #fff;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+}
+.spotlight-navigation button:hover {
+  background: #ffffff22;
+}
+.spotlight-info .spotlight-selections {
+  margin-top: 12px;
 }

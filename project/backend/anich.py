@@ -97,7 +97,7 @@ class AniChSource:
     def search(self, query):
         # AniCh rejects some terminal title punctuation (e.g. 孤独摇滚！) with HTTP 500.
         # Only simplify the lookup keyword; returned titles and identity checks stay intact.
-        keyword = query.strip().rstrip('!！?？ \t\r\n')
+        keyword = query.strip().rstrip('!！?？△ \t\r\n')
         if not keyword:
             raise SourceError('请输入有效的番名关键词。', 400)
         def load():

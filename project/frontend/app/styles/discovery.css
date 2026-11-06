@@ -975,3 +975,15 @@
     flex: 1;
   }
 }
+
+.home-feature-layout .season-tabs {
+  position: relative;
+  min-width: 0;
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 18px) / 3);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff35 transparent;
+  padding-bottom: 6px;
+}

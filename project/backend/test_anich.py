@@ -229,11 +229,12 @@ class AniChTests(unittest.TestCase):
         provider.search("BanG Dream! It's MyGO")
         provider.search('Fate/stay night')
         provider.search('作品？')
-        self.assertEqual(keywords, ["BanG Dream! It's MyGO", 'Fate/stay night', '作品'])
+        provider.search('摇曳露营△')
+        self.assertEqual(keywords, ["BanG Dream! It's MyGO", 'Fate/stay night', '作品', '摇曳露营'])
         with self.assertRaises(SourceError) as caught:
             provider.search('  ！?！！  ')
         self.assertEqual(caught.exception.status_code, 400)
-        self.assertEqual(len(keywords), 3)
+        self.assertEqual(len(keywords), 4)
 
     def test_current_search_endpoint_and_retired_endpoint_removed(self):
         with self.client() as client:

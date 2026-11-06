@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function FeaturedHero({ items = [], seasonLabel = "本季新番" }) {
+  const tabsRef = useRef(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(true);
   const [pageVisible, setPageVisible] = useState(true);
@@ -31,6 +32,18 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
     }, 6500);
     return () => window.clearTimeout(timer);
   }, [activeIndex, reducedMotion, pageVisible, items.length]);
+
+  useEffect(() => {
+    const rail = tabsRef.current;
+    const button = rail?.children[activeIndex % items.length];
+    if (!button) return;
+    rail.scrollTo({
+      left: button.offsetLeft - (rail.clientWidth - button.offsetWidth) / 2,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
+  }, [activeIndex, items.length]);
 
   if (!active) return null;
   function move(offset) {
@@ -110,7 +123,12 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
         </Link>
       </div>
       <div className="season-bottom content-shell">
-        <div className="season-tabs" role="group" aria-label="切换当季新番">
+        <div
+          className="season-tabs"
+          ref={tabsRef}
+          role="group"
+          aria-label="切换当季新番"
+        >
           {items.map((anime, index) => (
             <button
               key={anime.id}

@@ -24,6 +24,10 @@ export default function HomeDashboard() {
     .filter((anime) => Number(anime.year) < year)
     .slice(0, 6);
   const seasonItems = data?.items || [];
+  const spotlightItems = [
+    ...classics,
+    ...seasonItems.filter((anime) => !classics.some((item) => item.id === anime.id)),
+  ].slice(0, 8);
   const seasonUrl = `/browse?year=${year}&season=${season}&sort=heat`;
   const libraryStats = [
     ["全部", collectionItems.length],
@@ -62,7 +66,7 @@ export default function HomeDashboard() {
           </div>
         ) : (
           <FeaturedHero
-            items={seasonItems.slice(0, 3)}
+            items={seasonItems.slice(0, 6)}
             seasonLabel={`${year} · ${season * 3 - 2}月新番`}
           />
         )}
@@ -117,7 +121,7 @@ export default function HomeDashboard() {
             </span>
           </Link>
         </nav>
-        <HomeSpotlight items={classics.slice(0, 4)} />
+        <HomeSpotlight items={spotlightItems} />
         <section className="home-section" aria-labelledby="home-season-title">
           <div className="portal-section-heading">
             <div>

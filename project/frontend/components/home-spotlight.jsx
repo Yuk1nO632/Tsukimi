@@ -173,9 +173,29 @@ function SpotlightPreview({ anime }) {
 }
 
 export default function HomeSpotlight({ items = [] }) {
+  const selectionsRef = useRef(null);
   const [selectedId, setSelectedId] = useState(items[0]?.id);
   const selected = items.find((anime) => anime.id === selectedId) || items[0];
+  useEffect(() => {
+    const rail = selectionsRef.current;
+    const button = rail?.querySelector('[aria-pressed="true"]');
+    if (!button) return;
+    rail.scrollTo({
+      left: button.offsetLeft - (rail.clientWidth - button.offsetWidth) / 2,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
+  }, [selected?.id, items.length]);
+
   if (!selected) return null;
+  const selectedIndex = items.findIndex((anime) => anime.id === selected.id);
+  function move(offset) {
+    setSelectedId(
+      items[(selectedIndex + offset + items.length) % items.length].id,
+    );
+  }
+
   const score =
     Number.isFinite(selected.score) && selected.score > 0
       ? selected.score.toFixed(1)
@@ -195,15 +215,7 @@ export default function HomeSpotlight({ items = [] }) {
           发现更多 →
         </Link>
       </div>
-      <div
-        className="spotlight-stage"
-        data-tone={
-          Math.max(
-            0,
-            items.findIndex((anime) => anime.id === selected.id),
-          ) % 4
-        }
-      >
+      <div className="spotlight-stage" data-tone={selectedIndex % 4}>
         <SpotlightPreview key={selected.id} anime={selected} />
         <div className="spotlight-info">
           <div className="spotlight-meta">
@@ -248,7 +260,32 @@ export default function HomeSpotlight({ items = [] }) {
             <FavoriteButton animeId={selected.id} title={selected.title} />
           </div>
           <div
+            className="spotlight-navigation"
+            role="group"
+            aria-label="推荐预览切换"
+          >
+            <span>
+              {String(selectedIndex + 1).padStart(2, "0")} /{" "}
+              {String(items.length).padStart(2, "0")}
+            </span>
+            <button
+              type="button"
+              onClick={() => move(-1)}
+              aria-label="上一部推荐"
+            >
+              ← 上一部
+            </button>
+            <button
+              type="button"
+              onClick={() => move(1)}
+              aria-label="下一部推荐"
+            >
+              下一部 →
+            </button>
+          </div>
+          <div
             className="spotlight-selections"
+            ref={selectionsRef}
             role="group"
             aria-label="切换新热推荐"
           >
