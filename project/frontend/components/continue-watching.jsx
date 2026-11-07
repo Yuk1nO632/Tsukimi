@@ -10,7 +10,7 @@ import { useAccount } from "./account-provider";
 export function progressUrl(item) {
   const query = new URLSearchParams({
     episode: String(item.episode),
-    provider: "anich",
+    provider: item.source_provider || "anich",
   });
   if (item.source_id) query.set("source", String(item.source_id));
   if (item.line_id) query.set("line", String(item.line_id));

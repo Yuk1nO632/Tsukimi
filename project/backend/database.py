@@ -29,6 +29,13 @@ class Database:
                 if source.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='owners'").fetchone() is None:
                     with closing(sqlite3.connect(backup)) as destination:
                         source.backup(destination)
+        progress_backup = self.path.with_suffix(".pre-source-providers.db")
+        if self.path.exists() and not progress_backup.exists():
+            with closing(sqlite3.connect(self.path)) as source:
+                columns = {row[1] for row in source.execute("PRAGMA table_info(watch_progress)")}
+                if columns and "source_provider" not in columns:
+                    with closing(sqlite3.connect(progress_backup)) as destination:
+                        source.backup(destination)
         with self.connect() as connection:
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -78,6 +85,9 @@ class Database:
             """CREATE TABLE IF NOT EXISTS owned_source_bindings (
                 owner_id TEXT NOT NULL REFERENCES owners(id), anime_id TEXT NOT NULL, source_id INTEGER NOT NULL,
                 PRIMARY KEY(owner_id, anime_id))""",
+            """CREATE TABLE IF NOT EXISTS playback_preferences (
+                owner_id TEXT NOT NULL REFERENCES owners(id), anime_id TEXT NOT NULL,
+                provider TEXT NOT NULL, PRIMARY KEY(owner_id, anime_id))""",
             """CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY REFERENCES owners(id), email TEXT NOT NULL UNIQUE,
                 nickname TEXT NOT NULL, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL)""",
@@ -85,7 +95,7 @@ class Database:
                 owner_id TEXT NOT NULL REFERENCES owners(id), anime_id TEXT NOT NULL,
                 episode INTEGER NOT NULL, position REAL NOT NULL, duration REAL NOT NULL,
                 source_id INTEGER, line_id INTEGER, completed INTEGER NOT NULL DEFAULT 0,
-                revision INTEGER NOT NULL, updated_at INTEGER NOT NULL, operation_id TEXT NOT NULL,
+                revision INTEGER NOT NULL, updated_at INTEGER NOT NULL, operation_id TEXT NOT NULL, source_provider TEXT NOT NULL DEFAULT 'anich',
                 PRIMARY KEY(owner_id, anime_id))""",
             """CREATE TABLE IF NOT EXISTS email_codes (
                 email TEXT NOT NULL, purpose TEXT NOT NULL, digest TEXT NOT NULL,
@@ -105,6 +115,10 @@ class Database:
             connection.execute("INSERT OR IGNORE INTO owned_favorites SELECT * FROM favorites")
             connection.execute("INSERT OR IGNORE INTO owned_source_bindings SELECT * FROM source_bindings")
             connection.execute("INSERT INTO migrations VALUES ('account_owners')")
+
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(watch_progress)")}
+        if "source_provider" not in columns:
+            connection.execute("ALTER TABLE watch_progress ADD COLUMN source_provider TEXT NOT NULL DEFAULT 'anich'")
 
         columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
         if "username" not in columns:
@@ -220,14 +234,26 @@ class Database:
             cached = connection.execute("SELECT source_id FROM auto_source_bindings WHERE anime_id = ? AND matched_at > ?", (anime_id, int(time.time()) - 86400)).fetchone()
         return (cached[0], "automatic") if cached else (None, None)
 
-    def save_source_binding(self, anime_id, source_id, owner_id=None):
+    def save_source_binding(self, anime_id, source_id, owner_id=None, preferred_provider=None):
         with self.connect() as connection:
             if owner_id:
                 connection.execute("""INSERT INTO owned_source_bindings VALUES (?, ?, ?)
                     ON CONFLICT(owner_id, anime_id) DO UPDATE SET source_id = excluded.source_id""", (owner_id, anime_id, source_id))
+                if preferred_provider:
+                    connection.execute("""INSERT INTO playback_preferences VALUES (?, ?, ?)
+                        ON CONFLICT(owner_id, anime_id) DO UPDATE SET provider = excluded.provider""",
+                        (owner_id, anime_id.split(":", 1)[-1], preferred_provider))
             else:
                 connection.execute("""INSERT INTO auto_source_bindings VALUES (?, ?, ?)
                     ON CONFLICT(anime_id) DO UPDATE SET source_id = excluded.source_id, matched_at = excluded.matched_at""", (anime_id, source_id, int(time.time())))
+
+    def preferred_playback_provider(self, anime_id, owner_id):
+        if not owner_id:
+            return None
+        with self.connect() as connection:
+            row = connection.execute("SELECT provider FROM playback_preferences WHERE owner_id = ? AND anime_id = ?",
+                                     (owner_id, anime_id)).fetchone()
+        return row[0] if row else None
 
     def forget_auto_source(self, anime_id):
         with self.connect() as connection:

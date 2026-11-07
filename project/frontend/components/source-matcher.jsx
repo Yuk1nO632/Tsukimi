@@ -5,6 +5,7 @@ import PlayerIcon from "./player-icon";
 
 export default function SourceMatcher({
   title,
+  provider = "anich",
   onSelect,
   selectedId,
   inputRef,
@@ -35,7 +36,7 @@ export default function SourceMatcher({
     setError("");
     setItems(null);
     try {
-      const data = await searchPlaybackSource(query.trim(), controller.signal);
+      const data = await searchPlaybackSource(query.trim(), controller.signal, provider);
       if (!controller.signal.aborted)
         setItems(
           Array.isArray(data.items)
@@ -58,7 +59,7 @@ export default function SourceMatcher({
       <label className="source-search-label" htmlFor="source-query">
         搜索番名，更换播放来源
       </label>
-      <form role="search" aria-label="AniCh来源搜索" onSubmit={search}>
+      <form role="search" aria-label="播放来源搜索" onSubmit={search}>
         <div className="source-search-input">
           <PlayerIcon name="search" size={17} />
           <input
@@ -77,7 +78,7 @@ export default function SourceMatcher({
         </button>
       </form>
       <p className="source-search-hint">
-        搜索AniCh，选择前请核对季数与年份。
+        搜索{provider === "xifan" ? "稀饭动漫" : "AniCh"}，选择前请核对季数与年份。
       </p>
       <div aria-live="polite" aria-busy={loading || selecting}>
         {selecting && (

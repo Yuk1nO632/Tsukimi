@@ -22,6 +22,7 @@ from catalog import BangumiClient, Catalog, CatalogError, create_catalog_router
 from playback import create_playback_router
 from source_errors import SourceError
 from anich import AniChSource
+from xifan import XifanSource
 
 BACKEND_ROOT = Path(__file__).resolve().parent
 load_dotenv(BACKEND_ROOT / ".env")
@@ -37,10 +38,11 @@ class CollectionUpdate(BaseModel):
 
 
 def create_app(database_path: Path | None = None, catalog_path: Path | None = None,
-               allowed_origins: set[str] | None = None, playback_source: AniChSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
+               allowed_origins: set[str] | None = None, playback_source: AniChSource | None = None, metadata_source: BangumiClient | None = None, fallback_source: XifanSource | None = None) -> FastAPI:
     store = Database(database_path or Path(os.getenv("TSUKIMI_DATABASE", str(BACKEND_ROOT / "data/tsukimi.db"))))
     metadata_provider = metadata_source or BangumiClient()
     playback_provider = playback_source or AniChSource()
+    fallback_provider = fallback_source or (XifanSource() if playback_source is None else None)
     source = catalog_path or BACKEND_ROOT.parent / "catalog/catalog.json"
     origins = allowed_origins if allowed_origins is not None else set(
         os.getenv("TSUKIMI_ALLOWED_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8000,http://localhost:8000").split(",")
@@ -64,6 +66,8 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         finally:
             metadata_provider.close()
             playback_provider.close()
+            if fallback_provider is not None:
+                fallback_provider.close()
 
     application = FastAPI(title="Tsukimi API", version="0.5.0", lifespan=lifespan)
 
@@ -151,7 +155,7 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
         store.set_favorite(owner_id, anime_id, saved=False)
         return favorites(owner_id)
 
-    application.include_router(create_playback_router(playback_provider, current_session, require_session))
+    application.include_router(create_playback_router(playback_provider, current_session, require_session, fallback_provider))
     return application
 
 

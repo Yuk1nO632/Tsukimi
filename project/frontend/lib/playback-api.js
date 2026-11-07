@@ -16,10 +16,10 @@ async function request(path, signal) {
   return data;
 }
 
-export function readPlayback(animeId, episode, sourceAnimeId, lineId, signal) {
+export function readPlayback(animeId, episode, sourceAnimeId, lineId, signal, provider = "auto") {
   const query = new URLSearchParams({
     episode: String(episode),
-    source_provider: "anich",
+    source_provider: provider,
   });
   if (sourceAnimeId) query.set("source_anime_id", String(sourceAnimeId));
   if (lineId) query.set("line_id", String(lineId));
@@ -29,16 +29,16 @@ export function readPlayback(animeId, episode, sourceAnimeId, lineId, signal) {
   );
 }
 
-export function searchPlaybackSource(query, signal) {
+export function searchPlaybackSource(query, signal, provider = "anich") {
   return request(
-    `/api/sources/anich/search?q=${encodeURIComponent(query)}`,
+    `/api/sources/${encodeURIComponent(provider)}/search?q=${encodeURIComponent(query)}`,
     signal,
   );
 }
 
-export async function rememberSource(animeId, sourceId, signal) {
+export async function rememberSource(animeId, sourceId, signal, provider = "anich") {
   const response = await fetch(
-    `/api/sources/anich/bindings/${encodeURIComponent(animeId)}`,
+    `/api/sources/${encodeURIComponent(provider)}/bindings/${encodeURIComponent(animeId)}`,
     {
       method: "PUT",
       credentials: "same-origin",

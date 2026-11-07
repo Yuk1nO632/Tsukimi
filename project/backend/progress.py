@@ -1,6 +1,7 @@
 """Versioned last-watched position, isolated by server-resolved ownership."""
 
 import time
+from typing import Literal
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ class ProgressInput(BaseModel):
     episode: int = Field(ge=1, le=100000)
     position: float = Field(ge=0, le=604800, allow_inf_nan=False)
     duration: float = Field(gt=0, le=604800, allow_inf_nan=False)
+    source_provider: Literal["anich", "xifan"] = "anich"
     source_id: int | None = Field(default=None, gt=0)
     line_id: int | None = Field(default=None, gt=0)
     completed: bool = False
@@ -53,10 +55,12 @@ def create_progress_router(store, sessions, scope):
                     content={"detail": "另一设备已更新观看进度。", "item": current},
                 )
             connection.execute(
-                """INSERT INTO watch_progress VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """INSERT INTO watch_progress
+                (owner_id, anime_id, episode, position, duration, source_id, line_id, completed, revision, updated_at, operation_id, source_provider)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(owner_id, anime_id) DO UPDATE SET
                 episode=excluded.episode, position=excluded.position, duration=excluded.duration,
-                source_id=excluded.source_id, line_id=excluded.line_id, completed=excluded.completed,
+                source_id=excluded.source_id, line_id=excluded.line_id, source_provider=excluded.source_provider, completed=excluded.completed,
                 revision=excluded.revision, updated_at=excluded.updated_at, operation_id=excluded.operation_id""",
                 (
                     owner,
@@ -70,6 +74,7 @@ def create_progress_router(store, sessions, scope):
                     revision + 1,
                     time.time_ns() // 1000000,
                     payload.operation_id,
+                    payload.source_provider,
                 ),
             )
             return {"item": store.progress_row(connection, owner, anime_id)}

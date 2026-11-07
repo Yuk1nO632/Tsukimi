@@ -241,6 +241,7 @@ export default function useWatchProgress(animeId, episode, source, enabled) {
     const snapshot = {
       episode,
       ...sample,
+      source_provider: sourceRef.current.provider || "anich",
       source_id: sourceRef.current.source_anime_id || null,
       line_id: sourceRef.current.line_id || null,
     };
@@ -249,7 +250,7 @@ export default function useWatchProgress(animeId, episode, source, enabled) {
       !current.sending &&
       !current.retry &&
       confirmed &&
-      ["episode", "position", "duration", "source_id", "line_id"].every(
+      ["episode", "position", "duration", "source_provider", "source_id", "line_id"].every(
         (field) => confirmed[field] === snapshot[field],
       ) &&
       Boolean(confirmed.completed) === Boolean(snapshot.completed)

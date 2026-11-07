@@ -17,6 +17,7 @@ import LineSelector from "./line-selector";
 export default function WatchStudio({
   anime,
   selectedEpisode,
+  selectedProvider = "auto",
   selectedSourceId,
   selectedLineId,
 }) {
@@ -27,6 +28,8 @@ export default function WatchStudio({
   const [retry, setRetry] = useState(0);
   const [copyMessage, setCopyMessage] = useState("");
   const [source, setSource] = useState({ status: "loading" });
+  const activeProvider = source.provider || (selectedProvider === "auto" ? "anich" : selectedProvider);
+  const sourceNames = { anich: "AniCh", xifan: "稀饭动漫" };
   const progress = useWatchProgress(anime.id, selectedEpisode, source, !testMode);
   const helpRef = useRef(null);
   const sourcePanelRef = useRef(null);
@@ -52,6 +55,7 @@ export default function WatchStudio({
       selectedSourceId,
       selectedLineId,
       controller.signal,
+      selectedProvider,
     )
       .then((data) => {
         if (!controller.signal.aborted) setSource(data);
@@ -70,6 +74,7 @@ export default function WatchStudio({
     selectedEpisode,
     selectedSourceId,
     selectedLineId,
+    selectedProvider,
     retry,
     testMode,
   ]);
@@ -98,12 +103,13 @@ export default function WatchStudio({
   }, []);
   function episodeUrl(
     episode,
-    sourceId = selectedSourceId || source.source_anime_id,
-    lineId = source.line_id || selectedLineId,
+    sourceId = source.source_anime_id || (activeProvider === selectedProvider ? selectedSourceId : null),
+    lineId = source.line_id || (activeProvider === selectedProvider ? selectedLineId : null),
+    provider = activeProvider,
   ) {
     const query = new URLSearchParams({
       episode: String(episode),
-      provider: "anich",
+      provider,
     });
     if (sourceId) query.set("source", String(sourceId));
     if (lineId) query.set("line", String(lineId));
@@ -127,7 +133,7 @@ export default function WatchStudio({
     setSelectingSource(true);
     setSourceSaveError("");
     try {
-      await rememberSource(anime.id, id, controller.signal);
+      await rememberSource(anime.id, id, controller.signal, activeProvider);
       if (controller.signal.aborted) return;
       setTestMode(false);
       const episode =
@@ -278,7 +284,7 @@ export default function WatchStudio({
               {testMode
                 ? "测试短片 · 非番剧正片"
                 : ready
-                  ? `AniCh · ${source.episode_title || `第 ${selectedEpisode} 集`}`
+                  ? `${sourceNames[source.provider] || "播放来源"} · ${source.episode_title || `第 ${selectedEpisode} 集`}`
                   : source.status === "loading"
                     ? "正在自动查找并加载播放来源…"
                     : matched ? source.message : "请确认对应的播放来源"}
@@ -354,13 +360,32 @@ export default function WatchStudio({
           >
             <div className="source-panel-heading">
               <h2 id="source-panel-title">
-                播放来源 <span>AniCh</span>
+                播放来源 <span>{sourceNames[source.provider] || "自动选择"}</span>
               </h2>
               <span className={`source-badge${ready ? " is-ready" : ""}`}>
                 <i />
                 {sourceLabel}
               </span>
             </div>
+            <label className="source-line-label">
+              来源优先级
+              <select
+                aria-label="来源优先级"
+                value={selectedProvider}
+                disabled={selectingSource}
+                onChange={(event) => router.replace(
+                  `/watch/${anime.id}?episode=${selectedEpisode}&provider=${event.target.value}`,
+                  { scroll: false },
+                )}
+              >
+                <option value="auto">自动（AniCh 优先）</option>
+                <option value="anich">优先 AniCh</option>
+                <option value="xifan">优先稀饭动漫</option>
+              </select>
+            </label>
+            {source.fallback_from && (
+              <p className="small-label">{sourceNames[source.fallback_from]} 暂不可用，已切换至 {sourceNames[source.provider]}。</p>
+            )}
             <details
               className="watch-source-tools"
               ref={matcherDetailsRef}
@@ -372,6 +397,8 @@ export default function WatchStudio({
                   : "更换来源 / 匹配有误？"}
               </summary>
               <SourceMatcher
+                key={activeProvider}
+                provider={activeProvider}
                 title={anime.title}
                 inputRef={sourceInputRef}
                 selectedId={source.source_anime_id}
@@ -393,7 +420,7 @@ export default function WatchStudio({
             )}
             {source.lines?.length > 0 && (
               <LineSelector
-                context={`${anime.id}:${selectedEpisode}`}
+                context={`${activeProvider}:${anime.id}:${selectedEpisode}`}
                 lines={source.lines}
                 selectedId={source.line_id}
                 disabled={testMode}

@@ -245,7 +245,7 @@ class AniChTests(unittest.TestCase):
             self.assertEqual(data['items'][0]['id'], 32339)
             self.assertEqual(client.get('/api/sources/anich/search', params={'q': ' '}).status_code, 400)
             paths = client.get('/openapi.json').json()['paths']
-            self.assertTrue(all('/sources/anich/' in path for path in paths if '/sources/' in path))
+            self.assertTrue(any('/sources/{source_provider}/' in path for path in paths))
 
     def test_invalid_playback_parameters_rejected_before_provider_call(self):
         with self.client() as client:

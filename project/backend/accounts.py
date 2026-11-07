@@ -177,6 +177,7 @@ def create_account_router(store, sessions):
                     "owned_favorites",
                     "watch_progress",
                     "owned_source_bindings",
+                    "playback_preferences",
                 )
             )
             if count:
@@ -438,6 +439,7 @@ def create_account_router(store, sessions):
                 for table in (
                     "owned_favorites",
                     "owned_source_bindings",
+                    "playback_preferences",
                     "watch_progress",
                 ):
                     columns = [

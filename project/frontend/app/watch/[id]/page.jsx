@@ -30,15 +30,15 @@ export default async function WatchPage({ params, searchParams }) {
       notFound();
     return Number(value);
   }
-  const selectedSourceId =
-    query.provider === "anich" ? optionalId(query.source) : null;
-  const selectedLineId =
-    query.provider === "anich" ? optionalId(query.line) : null;
+  const selectedProvider = ["anich", "xifan"].includes(query.provider) ? query.provider : "auto";
+  const selectedSourceId = selectedProvider !== "auto" ? optionalId(query.source) : null;
+  const selectedLineId = selectedProvider !== "auto" ? optionalId(query.line) : null;
   return (
     <WatchStudio
-      key={`${id}:${selectedEpisode}:${selectedSourceId}:${selectedLineId}`}
+      key={`${id}:${selectedEpisode}:${selectedProvider}:${selectedSourceId}:${selectedLineId}`}
       anime={anime}
       selectedEpisode={selectedEpisode}
+      selectedProvider={selectedProvider}
       selectedSourceId={selectedSourceId}
       selectedLineId={selectedLineId}
     />

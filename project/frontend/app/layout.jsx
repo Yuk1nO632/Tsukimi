@@ -28,7 +28,7 @@ export default function RootLayout({ children }) {
               <a href="https://bgm.tv" target="_blank" rel="noreferrer">
                 番剧资料与放送安排：Bangumi ↗
               </a>
-              <span>播放来源：AniCh</span>
+              <span>播放来源 AniCh / 稀饭动漫</span>
             </div>
             <nav aria-label="页脚导航">
               <Link href="/browse">番剧索引</Link>
