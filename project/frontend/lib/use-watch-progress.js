@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { requestJson } from "./api";
+import { discardLocalProgress } from "./progress-storage";
 import { useAccount } from "../components/account-provider";
 
 // A route switch waits for the previous player's final save before reading its revision.
@@ -259,6 +260,10 @@ export default function useWatchProgress(animeId, episode, source, enabled) {
     current.snapshot = snapshot;
     void flush(current, force);
   }
+  function discardLocal() {
+    const current = session.current;
+    if (current) discardLocalProgress(current, sessionStorage);
+  }
   function keepLocal() {
     const current = session.current;
     if (!state.conflict || !current) return;
@@ -276,5 +281,5 @@ export default function useWatchProgress(animeId, episode, source, enabled) {
     }
     void flush(current, true);
   }
-  return { ...state, report, keepLocal, retry };
+  return { ...state, report, keepLocal, discardLocal, retry };
 }

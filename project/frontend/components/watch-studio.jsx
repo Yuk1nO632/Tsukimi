@@ -229,7 +229,7 @@ export default function WatchStudio({
           {!testMode && <div className={`watch-progress-status${progress.error ? " has-error" : ""}`} role="status">
             <span>{progress.message}</span>
             {progress.conflict ? <div>
-              <button className="text-button" onClick={() => { window.location.assign(progressUrl(progress.conflict)); }}>使用云端进度</button>
+              <button className="text-button" onClick={() => { progress.discardLocal(); window.location.assign(progressUrl(progress.conflict)); }}>使用云端进度</button>
               <button className="text-button" onClick={progress.keepLocal}>以本机进度继续</button>
             </div> : progress.error && <button className="text-button" onClick={progress.retry}>重试同步</button>}
           </div>}
