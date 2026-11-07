@@ -283,3 +283,60 @@ class AniChTests(unittest.TestCase):
         self.assertEqual(decode_url(encoded('https://cdn.example.com/test.mp4')), 'https://cdn.example.com/test.mp4')
         for url in ['http://cdn.example.com/a', 'https://127.0.0.1/a', 'https://user:pass@cdn.example.com/a', 'https://cdn.example.com:8080/a', 'https://[::1]/a']:
             self.assertFalse(public_media_url(url))
+    def test_special_search_recovers_from_full_title_500_and_checks_bangumi_id(self):
+        keywords=[]
+        def handle(request):
+            path=request.url.path
+            if path.endswith('/search'):
+                keywords.append(request.url.params['keyword'])
+                if request.url.params['keyword'] != '伪恋':
+                    return httpx.Response(500)
+                return httpx.Response(200,content=b''.join(field(1,field(1,i)+field(2,title)+field(4,count))
+                    for i,title,count in [(24954,'伪恋',20),(24945,'伪恋 特别篇',5)]))
+            if '/detail/' in path:
+                identifier=int(path.split('/')[-1])
+                return httpx.Response(200,json={'id':identifier,'title':'伪恋 特别篇' if identifier==24945 else '伪恋',
+                    'titles':['伪恋OAD'] if identifier==24945 else [],'sites':[{'site':'bangumi','id':'104196' if identifier==24945 else '74628'}]})
+            return httpx.Response(404)
+        provider=AniChSource(transport=httpx.MockTransport(handle));self.addCleanup(provider.close)
+        anime={'id':'bgm-104196','title':'伪恋 OAD','originalTitle':'ニセコイ OAD','aliases':'Nisekoi OAD','episodes':4,'year':'2014'}
+        self.assertEqual(provider.discover(anime)[0],24945)
+        self.assertEqual(provider.search('伪恋 OAD')[1]['id'],24945)
+        self.assertEqual(keywords,['伪恋 OAD','伪恋'])
+        anime['id']='bgm-999'
+        self.assertIsNone(provider.discover(anime)[0])
+
+    def test_special_episode_zero_type_uses_its_sort_without_losing_main_series(self):
+        original=self.handle
+        def handle(request):
+            if '/episodes/' in request.url.path:
+                return httpx.Response(200,content=field(1,field(1,0)+field(2,1))+field(1,field(2,2)))
+            return original(request)
+        provider=AniChSource(transport=httpx.MockTransport(handle));self.addCleanup(provider.close)
+        self.assertEqual(provider.resolve(32339,2)['status'],'ready')
+        self.assertTrue(any(path.endswith('/vod/32339/2') for path in self.calls))
+
+    def test_mixed_series_does_not_treat_special_as_main_episode(self):
+        original=self.handle
+        def handle(request):
+            if '/episodes/' in request.url.path:
+                return httpx.Response(200,content=field(1,field(1,1)+field(2,1))+field(1,field(1,0)+field(2,2)))
+            return original(request)
+        provider=AniChSource(transport=httpx.MockTransport(handle));self.addCleanup(provider.close)
+        result=provider.resolve(32339,2)
+        self.assertEqual(result['reason'],'episode_missing')
+        self.assertFalse(any('/vod/' in path for path in self.calls))
+
+    def test_upstream_empty_candidates_is_distinct_from_filtered_or_missing_line(self):
+        original=self.handle
+        def handle(request):
+            if '/vod/' in request.url.path:return httpx.Response(200,json=[])
+            return original(request)
+        provider=AniChSource(transport=httpx.MockTransport(handle));self.addCleanup(provider.close)
+        result=provider.resolve(32339,2)
+        self.assertEqual(result['reason'],'no_resources')
+        self.assertEqual(result['source_anime_id'],32339)
+        self.assertIn('没有返回',result['message'])
+        self.assertNotIn('url',result)
+        self.rows=[('wrong','无关作品','H.264','https://cdn.example.com/wrong.mp4')]
+        self.assertEqual(self.provider.resolve(32339,1)['reason'],'unverified_resources')

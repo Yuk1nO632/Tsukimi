@@ -168,6 +168,7 @@ export default function WatchStudio({
     ? { status: "ready", url: "/media/flower.mp4", isTest: true }
     : progress.loading ? { status: "loading" } : source;
   const ready = source.status === "ready";
+  const matched = Boolean(source.source_anime_id);
   const sourceLabel =
     source.status === "loading"
       ? "连接中"
@@ -177,7 +178,7 @@ export default function WatchStudio({
           : source.match_kind === "saved"
             ? "已记住选择"
             : "已匹配"
-        : "需要选择来源";
+        : matched ? source.lines?.length ? "已匹配 · 请换线路" : "已匹配 · 暂无线路" : "需要选择来源";
   const episodeCount =
     anime.episodes || source.episode_count || selectedEpisode;
   const nextHref =
@@ -280,7 +281,7 @@ export default function WatchStudio({
                   ? `AniCh · ${source.episode_title || `第 ${selectedEpisode} 集`}`
                   : source.status === "loading"
                     ? "正在自动查找并加载播放来源…"
-                    : "请确认对应的播放来源"}
+                    : matched ? source.message : "请确认对应的播放来源"}
             </span>
             <details className="playback-help" ref={helpRef}>
               <summary>播放帮助</summary>
@@ -384,7 +385,7 @@ export default function WatchStudio({
                 </p>
               )}
             </details>
-            {ready && (
+            {matched && (
               <div className="source-current">
                 <span>当前作品</span>
                 <strong>{source.source_title}</strong>

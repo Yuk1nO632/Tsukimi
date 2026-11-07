@@ -238,7 +238,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     if (document.fullscreenElement === frameRef.current) await document.exitFullscreen().catch(() => {});
     onNextLine?.();
   }
-  const heading = videoError ? "暂时无法播放这一集" : media.status === "loading" ? "正在匹配并加载来源" : media.status === "unmatched" ? "先为这部番找到播放来源" : "来源暂时没有准备好";
+  const heading = videoError ? "暂时无法播放这一集" : media.status === "loading" ? "正在匹配并加载来源" : media.status === "unmatched" ? "先为这部番找到播放来源" : media.reason === "no_resources" ? "已匹配作品，暂无播放资源" : media.reason === "episode_missing" ? "来源目录暂缺这一集" : "来源暂时没有准备好";
   const percent = duration ? Math.min(100, currentTime / duration * 100) : 0;
 
   return <div className={`player-frame${controlsVisible ? " controls-visible" : " controls-hidden"}${initialLoading ? " is-initial-loading" : ""}`} ref={frameRef} tabIndex={0} role="region" aria-label={`${label}播放器，空格播放暂停，方向键快进或调节音量，F 全屏`} onKeyDown={onKeyDown} onPointerMove={revealControls} onPointerDown={(event) => { touchReveal.current = event.pointerType === "touch" && !controlsVisible && event.target === videoRef.current; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }}>

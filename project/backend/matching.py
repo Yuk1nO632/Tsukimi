@@ -7,6 +7,15 @@ def title_key(value):
     return "".join(char for char in unicodedata.normalize("NFKC", str(value)).casefold() if char.isalnum())
 
 
+def special_search_title(value):
+    """Broaden a special's search term while keeping its identity checks separate."""
+    value = unicodedata.normalize("NFKC", str(value)).strip()
+    return re.sub(
+        r"(?:(?:\s+|(?<=[\u3040-\u30ff\u3400-\u9fff]))(?:OAD|OVA|SP)|特别篇|特別篇|特別編)\s*$",
+        "", value, flags=re.I,
+    ).strip()
+
+
 def season_number(value):
     text = unicodedata.normalize("NFKC", str(value)).casefold()
     match = re.search(r"第\s*([一二三四五六七八九十0-9]+)\s*[季期部]|season\s*(\d+)|(\d+)(?:st|nd|rd|th)\s*season", text)

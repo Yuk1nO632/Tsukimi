@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from anich_protocol import LIMIT, fields, decode_url
-from matching import exact_source, title_key, season_number
+from matching import exact_source, title_key, season_number, special_search_title
 from source_errors import SourceError
 
 
@@ -111,6 +111,11 @@ class AniChSource:
                     year = ''
                     items.append({'id': row[1], 'title': text(row, 2), 'year': year, 'episodes': row.get(4, 0)})
                 return items
+            except SourceError as error:
+                fallback = special_search_title(keyword)
+                if error.status_code == 502 and fallback and fallback != keyword:
+                    return self.search(fallback)
+                raise
             except (ValueError, TypeError, KeyError, OverflowError, OSError) as error:
                 raise SourceError('AniCh 搜索资料格式暂不受支持。') from error
         return self._cached(('search', keyword), load, 600)
@@ -136,16 +141,37 @@ class AniChSource:
     def discover(self, anime):
         candidates = {}
         queries = list(dict.fromkeys(value.strip()[:80] for value in
-            (anime.get('title', ''), anime.get('originalTitle', '')) if value.strip()))
+            (anime.get('title', ''), special_search_title(anime.get('title', '')),
+             anime.get('originalTitle', '')) if value.strip()))
         names = {title_key(value) for value in (anime.get('title', ''), anime.get('originalTitle', ''),
             *re.split(r'\s+/\s+', anime.get('aliases', ''))) if value}
-        for query in queries[:2]:
-            for item in self.search(query):
-                candidates[item['id']] = item
-            verified, fallback = [], []
-            # Bound detail fan-out; exact title before fetching any candidate detail.
-            for item in [item for item in candidates.values() if title_key(item['title']) in names][:4]:
-                detail = self.detail(item['id'])
+        base_names = {title_key(special_search_title(value)) for value in
+                      (anime.get('title', ''), anime.get('originalTitle', '')) if value}
+        checked, verified, fallback = set(), [], []
+        search_succeeded = False
+        last_error = None
+        for query in queries[:3]:
+            try:
+                for item in self.search(query):
+                    candidates[item['id']] = item
+                search_succeeded = True
+            except SourceError as error:
+                if error.status_code in (503, 504):
+                    raise
+                last_error = error
+                continue
+            plausible = [item for item in candidates.values()
+                         if title_key(item['title']) in names or
+                         title_key(special_search_title(item['title'])) in base_names]
+            # Fetch at most six details across all queries, including alternate special titles.
+            for item in plausible:
+                if item['id'] in checked or len(checked) >= 6:
+                    continue
+                checked.add(item['id'])
+                try:
+                    detail = self.detail(item['id'])
+                except SourceError:
+                    continue
                 stamp = detail.get('airdate')
                 if isinstance(stamp, (int, float)) and stamp > 0:
                     item = {**item, 'year': str(datetime.fromtimestamp(stamp / 1000, timezone.utc).year)}
@@ -162,6 +188,8 @@ class AniChSource:
             selected = exact_source(anime, fallback)
             if selected:
                 return selected, list(candidates.values())
+        if not search_succeeded and last_error:
+            raise last_error
         return None, list(candidates.values())
 
     def episodes(self, source_id):
@@ -175,11 +203,15 @@ class AniChSource:
     def resolve(self, source_id, episode_number, line_id=None):
         detail = self.detail(source_id)
         episodes = self.episodes(source_id)
-        available = {row.get(2) for row in episodes if row.get(1) == 1 and isinstance(row.get(2), int)}
+        # The public client uses sort for VOD; standalone OAD/OVA records use type 0.
+        # Keep specials separate when a record also contains main-series episodes.
+        episode_type = 1 if any(row.get(1) == 1 for row in episodes) else 0
+        available = {row.get(2) for row in episodes
+                     if row.get(1, 0) == episode_type and type(row.get(2)) is int and row[2] > 0}
         common = {'provider': self.name, 'source_anime_id': source_id, 'source_title': detail['title'],
                   'episode_count': max(available, default=0), 'lines': [], 'line_id': None}
         if episode_number not in available:
-            return {**common, 'status': 'unavailable', 'message': 'AniCh 暂未提供这一集，请稍后重试或重新匹配。'}
+            return {**common, 'status': 'unavailable', 'reason': 'episode_missing', 'message': f'已匹配《{detail["title"]}》，但来源目录暂未列出第 {episode_number} 集。'}
         raw = self._get(f'/vod/{source_id}/{episode_number}', json_result=True)
         try:
             if not isinstance(raw, list) or len(raw) > LIMIT or any(type(n) is not int or not 0 <= n <= 255 for n in raw):
@@ -230,6 +262,10 @@ class AniChSource:
         common.update(lines=[{'id': item['id'], 'name': item['name'], 'url': item['url'], 'format': item['format']} for item in choices], filtered_candidates=rejected)
         selected = next((item for item in choices if item['id'] == line_id), None) if line_id else (choices[0] if choices else None)
         if not selected:
-            return {**common, 'status': 'unavailable', 'message': '所选线路本集暂不可用，请切换线路。' if choices else '尚无核对通过的线路，请稍后重试或重新匹配。'}
+            return {**common, 'status': 'unavailable',
+                    'reason': 'line_missing' if choices else 'unverified_resources' if rows else 'no_resources',
+                    'message': '所选线路本集暂不可用，请切换线路。' if choices else
+                        '已有视频候选，但作品或剧集信息未核对通过，请确认来源。' if rows else
+                        f'已匹配《{detail["title"]}》，但 AniCh 没有返回第 {episode_number} 集的视频线路。'}
         return {**common, 'status': 'ready', 'line_id': selected['id'], 'line_name': selected['name'],
                 'url': selected['url'], 'format': selected['format'], 'episode_title': f'第 {episode_number} 集'}
