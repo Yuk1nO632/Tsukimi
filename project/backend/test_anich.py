@@ -42,7 +42,7 @@ class AniChTests(unittest.TestCase):
         self.path = Path(self.directory) / 'test.db'
         self.calls = []
         self.bgm = '400602'
-        self.fail = None
+        self.source_failure = None
         self.episode2_missing = False
         self.rows = [('main', '葬送的芙莉莲', 'H.264', 'https://cdn.example.com/ep.mp4'),
                      ('main', '葬送的芙莉莲', 'H.264', 'https://mirror.example.com/ep.mp4'),
@@ -54,13 +54,13 @@ class AniChTests(unittest.TestCase):
 
     def handle(self, request):
         self.calls.append(request.url.path)
-        if self.fail == 'timeout':
+        if self.source_failure == 'timeout':
             raise httpx.ReadTimeout('test', request=request)
-        if self.fail == 'limited':
+        if self.source_failure == 'limited':
             return httpx.Response(429)
-        if self.fail == 'bad-wire':
+        if self.source_failure == 'bad-wire':
             return httpx.Response(200, content=b'\x12\x05x')
-        if self.fail == 'oversize':
+        if self.source_failure == 'oversize':
             return httpx.Response(200, content=b'x' * (2 * 1024 * 1024 + 1))
         path = request.url.path
         if path.endswith('/search'):
@@ -142,11 +142,11 @@ class AniChTests(unittest.TestCase):
 
     def test_source_errors_are_actionable_and_not_cached(self):
         for failure, code in [('timeout', 504), ('limited', 503), ('bad-wire', 502), ('oversize', 502)]:
-            self.fail = failure
+            self.source_failure = failure
             with self.assertRaises(SourceError) as error:
                 self.provider.search('new-' + failure)
             self.assertEqual(error.exception.status_code, code)
-        self.fail = None
+        self.source_failure = None
         self.assertEqual(self.provider.search('new-timeout')[0]['id'], 32339)
 
     def test_manual_binding_survives_restart_isolated_from_other_browser(self):
@@ -305,7 +305,8 @@ class AniChTests(unittest.TestCase):
         anime={'id':'bgm-104196','title':'伪恋 OAD','originalTitle':'ニセコイ OAD','aliases':'Nisekoi OAD','episodes':4,'year':'2014'}
         self.assertEqual(provider.discover(anime)[0],24945)
         self.assertEqual(provider.search('伪恋 OAD')[1]['id'],24945)
-        self.assertEqual(keywords,['伪恋 OAD','伪恋'])
+        # A separate manual lookup retries its full term, then reuses the broad-term cache.
+        self.assertEqual(keywords,['伪恋 OAD','伪恋','伪恋 OAD'])
         anime['id']='bgm-999'
         self.assertIsNone(provider.discover(anime)[0])
 
@@ -484,3 +485,96 @@ class AniChTests(unittest.TestCase):
         self.assertEqual(provider.discover(anime)[0], 99)
         self.assertEqual(len(details), 9)
         self.assertEqual(len(set(details)), 9)
+
+    def test_symbol_queries_verify_main_series_when_special_shares_official_id(self):
+        cases = [
+            ('Re：从零开始的异世界生活', '从零开始的异世界生活'),
+            ('【我推的孩子】', '我推的孩子'),
+            ('中二病也要谈恋爱！恋', '中二病也要谈恋爱'),
+            ('无头骑士异闻录×2 承', '无头骑士异闻录'),
+        ]
+        for title, keyword in cases:
+            with self.subTest(title=title):
+                def handle(request):
+                    if request.url.path.endswith('/search'):
+                        if request.url.params['keyword'] != keyword:
+                            return httpx.Response(500)
+                        return httpx.Response(200, content=
+                            field(1, field(1, 10) + field(2, title + ' 特别篇')) +
+                            field(1, field(1, 11) + field(2, title)))
+                    identifier = int(request.url.path.split('/')[-1])
+                    return httpx.Response(200, json={
+                        'id': identifier, 'title': title + (' 特别篇' if identifier == 10 else ''),
+                        'sites': [{'site': 'bangumi', 'id': '12345'}],
+                    })
+
+                provider = AniChSource(transport=httpx.MockTransport(handle))
+                self.addCleanup(provider.close)
+                anime = {'id': 'bgm-12345', 'title': title, 'year': '2023', 'platform': 'TV'}
+                self.assertEqual(provider.discover(anime)[0], 11)
+
+    def test_standalone_special_keeps_automatic_identity_verification(self):
+        def handle(request):
+            if request.url.path.endswith('/search'):
+                return httpx.Response(200, content=field(1, field(1, 10) + field(2, '作品 特别篇')))
+            return httpx.Response(200, json={
+                'id': 10, 'title': '作品 特别篇',
+                'sites': [{'site': 'bangumi', 'id': '12345'}],
+            })
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        for anime in [
+            {'id': 'bgm-12345', 'title': '作品 OAD'},
+            {'id': 'bgm-12345', 'title': '作品', 'platform': 'OVA'},
+        ]:
+            with self.subTest(anime=anime):
+                self.assertEqual(provider.discover(anime)[0], 10)
+
+    def test_access_denial_stops_discovery_without_trying_more_keywords(self):
+        requests = []
+
+        def handle(request):
+            requests.append(request.url.params['keyword'])
+            return httpx.Response(403)
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        with self.assertRaises(SourceError) as raised:
+            provider.discover({'id': 'bgm-12345', 'title': '测试作品 第二季', 'aliases': '另一个名字'})
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(requests, ['测试作品 第二季'])
+
+    def test_detail_access_denial_stops_remaining_identity_probes(self):
+        requests = []
+
+        def handle(request):
+            requests.append(request.url.path)
+            if request.url.path.endswith('/search'):
+                return httpx.Response(200, content=
+                    field(1, field(1, 10) + field(2, '测试作品')) +
+                    field(1, field(1, 11) + field(2, '测试作品 第二季')))
+            return httpx.Response(403)
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        with self.assertRaises(SourceError) as raised:
+            provider.discover({'id': 'bgm-12345', 'title': '测试作品'})
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(len(requests), 2)
+
+    def test_discovery_does_not_repeat_failed_fallback_keywords(self):
+        keywords = []
+
+        def handle(request):
+            keywords.append(request.url.params['keyword'])
+            return httpx.Response(500)
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        with self.assertRaises(SourceError):
+            provider.discover({
+                'id': 'bgm-12345', 'title': '测试作品！恋',
+                'originalTitle': '测试作品!恋', 'aliases': '测试作品 / 测试作品！',
+            })
+        self.assertEqual(keywords, ['测试作品！恋', '测试作品', '测试作品!恋'])

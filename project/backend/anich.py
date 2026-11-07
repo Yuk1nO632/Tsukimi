@@ -12,7 +12,10 @@ from urllib.parse import urlsplit
 import httpx
 
 from anich_protocol import LIMIT, fields, decode_url
-from matching import exact_source, title_key, season_number, fallback_search_title, discovery_queries, part_number
+from matching import (
+    exact_source, title_key, season_number, fallback_search_title, discovery_queries,
+    part_number, special_search_title, search_keyword,
+)
 from source_errors import SourceError
 
 
@@ -63,6 +66,8 @@ class AniChSource:
             with client.stream('GET', self.base + path, params=params) as response:
                 if response.status_code == 404:
                     raise SourceError('AniCh 中的作品或剧集已不可用，请重新匹配。', 404)
+                if response.status_code == 403:
+                    raise SourceError('AniCh 暂时拒绝请求，请稍后重试。', 503)
                 if response.status_code == 429:
                     raise SourceError('AniCh 请求较多，请稍后重试。', 503)
                 response.raise_for_status()
@@ -95,10 +100,10 @@ class AniChSource:
             self._cache[key] = (time.monotonic(), value)
         return value
 
-    def search(self, query):
+    def search(self, query, *, allow_fallback=True):
         # AniCh rejects some terminal title punctuation (e.g. 孤独摇滚！) with HTTP 500.
         # Only simplify the lookup keyword; returned titles and identity checks stay intact.
-        keyword = query.strip().rstrip('!！?？△ \t\r\n')
+        keyword = search_keyword(query)
         if not keyword:
             raise SourceError('请输入有效的番名关键词。', 400)
         def load():
@@ -114,7 +119,7 @@ class AniChSource:
                 return items
             except SourceError as error:
                 fallback = fallback_search_title(keyword)
-                if error.status_code == 502 and fallback and fallback != keyword:
+                if allow_fallback and error.status_code == 502 and fallback and fallback != keyword:
                     return self.search(fallback)
                 raise
             except (ValueError, TypeError, KeyError, OverflowError, OSError) as error:
@@ -147,6 +152,10 @@ class AniChSource:
         target_season = season_number(anime.get('title', '')) or season_number(anime.get('originalTitle', ''))
         target_part = part_number(anime.get('title', '')) or part_number(anime.get('originalTitle', ''))
         target_year = str(anime.get('year') or '')[:4]
+        target_special = anime.get('platform') in {'OVA', 'OAD', 'SP'} or any(
+            title_key(special_search_title(value)) != title_key(value)
+            for value in (anime.get('title', ''), anime.get('originalTitle', ''))
+        )
         def relevance(item):
             name = title_key(item['title'])
             same_season = season_number(item['title']) == target_season
@@ -157,7 +166,7 @@ class AniChSource:
         last_error = None
         for query in queries:
             try:
-                for item in self.search(query):
+                for item in self.search(query, allow_fallback=False):
                     candidates[item['id']] = item
                 search_succeeded = True
             except SourceError as error:
@@ -173,7 +182,9 @@ class AniChSource:
                 checked.add(item['id'])
                 try:
                     detail = self.detail(item['id'])
-                except SourceError:
+                except SourceError as error:
+                    if error.status_code in (503, 504):
+                        raise
                     continue
                 stamp = detail.get('airdate')
                 if isinstance(stamp, (int, float)) and stamp > 0:
@@ -183,9 +194,11 @@ class AniChSource:
                 if anime['id'].removeprefix('bgm-') in linked:
                     source_season = season_number(detail['title'])
                     source_part = part_number(detail['title'])
+                    source_special = title_key(special_search_title(detail['title'])) != title_key(detail['title'])
                     conflict = ((target_season and source_season and target_season != source_season) or
                                 (target_part and source_part and target_part != source_part) or
-                                (target_year and item['year'] and target_year != item['year']))
+                                (target_year and item['year'] and target_year != item['year']) or
+                                (source_special and not target_special))
                     if not conflict:
                         verified.append(item['id'])
                 elif not linked:

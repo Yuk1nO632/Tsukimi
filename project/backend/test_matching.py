@@ -52,3 +52,27 @@ class MatchingTests(unittest.TestCase):
         self.assertIsNone(season_number('无职转生 第2部分'))
         self.assertEqual(part_number('无职转生Ⅱ 第2部分'),2)
         self.assertEqual(part_number('无职转生Ⅱ Part.2'),2)
+
+    def test_symbol_fallback_keeps_meaningful_title_and_unwraps_full_name(self):
+        cases = {
+            'Re：从零开始的异世界生活': '从零开始的异世界生活',
+            'Re:ゼロから始める異世界生活': 'ゼロから始める異世界生活',
+            '【我推的孩子】': '我推的孩子',
+            '【我推的孩子】 第二季': '我推的孩子',
+            '中二病也要谈恋爱！恋': '中二病也要谈恋爱',
+            '无头骑士异闻录×2 承': '无头骑士异闻录',
+            'デート・ア・ライブII': 'デート',
+            '作品名称（特别版）': '作品名称',
+            "剧场版 BanG Dream! It's MyGO!!!!! 前篇": 'BanG Dream',
+        }
+        for title, expected in cases.items():
+            with self.subTest(title=title):
+                self.assertEqual(fallback_search_title(title), expected)
+        self.assertNotIn('Re', discovery_queries({'title': 'Re：从零开始的异世界生活'}))
+
+    def test_query_deduplication_uses_actual_lookup_keywords(self):
+        queries = discovery_queries({
+            'title': '测试作品！', 'originalTitle': '测试作品!',
+            'aliases': '测试作品！！ / 测试作品 / Another title',
+        })
+        self.assertEqual(queries, ['测试作品', 'Another title'])

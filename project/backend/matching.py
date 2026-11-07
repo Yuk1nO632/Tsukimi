@@ -20,9 +20,11 @@ def fallback_search_title(value):
     """Build a broad lookup term. Never use this term as proof of identity."""
     value = unicodedata.normalize("NFKC", str(value)).strip()
     result = special_search_title(value)
+    result = re.sub(r"^(?:剧场版|劇場版|映画)\s*", "", result).strip()
     # Tilde-delimited subtitles, bracketed editions, seasons and parts vary by source.
     result = re.split(r"[~〜]", result, maxsplit=1)[0].strip()
-    result = re.sub(r"\s*[（(【\[].*?[）)】\]]\s*$", "", result).strip()
+    # Keep a title wrapped entirely in brackets; only discard an appended note.
+    result = re.sub(r"(?<=\S)\s*[（(【\[].*?[）)】\]]\s*$", "", result).strip()
     result = re.sub(
         r"\s*(?:第\s*[一二三四五六七八九十0-9]+\s*(?:部分|季|期|部)|"
         r"(?:season|part)\s*\d+|第\s*\d+\s*クール)\s*$",
@@ -30,11 +32,20 @@ def fallback_search_title(value):
     ).strip()
     result = re.sub(r"(?<=[\u3040-\u30ff\u3400-\u9fff])\s*(?:VIII|VII|III|VI|IV|II|IX|V|X)\s*$", "", result, flags=re.I).strip()
     if re.search(r"[\u3040-\u30ff\u3400-\u9fff]", result):
-        result = re.split(r"[:：]", result, maxsplit=1)[0].strip()
+        result = result.translate(str.maketrans({char: " " for char in "【】[]（）()"})).strip()
+        parts = re.split(r"[:：!！?？×・·]", result, maxsplit=1)
+        if len(parts) == 2:
+            # A short prefix such as Re: is less selective than the actual title.
+            result = (parts[0] if len(title_key(parts[0])) >= 3 else parts[1]).strip()
         match = re.fullmatch(r"(.+[\u3040-\u30ff\u3400-\u9fff])\s+[A-Za-z][A-Za-z0-9\s!?'’.,:()_-]*", result)
         if match:
             result = match[1].strip()
     return result if len(title_key(result)) >= 2 else value
+
+
+def search_keyword(value):
+    """Normalize lookup punctuation without changing the stored work identity."""
+    return value.strip().rstrip("!！?？△ \t\r\n")
 
 
 def discovery_queries(anime):
@@ -47,8 +58,9 @@ def discovery_queries(anime):
         if not name:
             continue
         for query in (name.strip()[:80], fallback_search_title(name)[:80]):
-            if query and query not in queries:
-                queries.append(query)
+            keyword = search_keyword(query)
+            if keyword and keyword not in queries:
+                queries.append(keyword)
     return queries[:6]
 
 
