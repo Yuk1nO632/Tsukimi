@@ -340,3 +340,51 @@ class AniChTests(unittest.TestCase):
         self.assertNotIn('url',result)
         self.rows=[('wrong','无关作品','H.264','https://cdn.example.com/wrong.mp4')]
         self.assertEqual(self.provider.resolve(32339,1)['reason'],'unverified_resources')
+
+    def test_fine_subtitle_search_and_zero_number_feature_keep_full_identity(self):
+        keywords=[]
+        def handle(request):
+            path=request.url.path
+            if path.endswith('/search'):
+                keyword=request.url.params['keyword']; keywords.append(keyword)
+                if keyword != '路人女主的养成方法':return httpx.Response(500)
+                return httpx.Response(200,content=field(1,field(1,15261)+field(2,'路人女主的养成方法 Fine')+field(4,1)))
+            if '/detail/' in path:
+                return httpx.Response(200,json={'id':15261,'title':'路人女主的养成方法 Fine','titles':['路人女主的养成方法 剧场版'],
+                    'episodes_total':1,'sites':[{'site':'bangumi','id':'231497'}]})
+            if '/episodes/' in path:
+                return httpx.Response(200,content=field(1,field(1,1)+field(2,1)))
+            rows=[]
+            for index,(title,label,episode) in enumerate([
+                ('路人女主的养成方法 Fine','全集 · 1080P',0),
+                ('路人女主的养成方法 Fine','正片 · 1080P',0),
+                ('路人女主的养成方法 剧场版','路人女主的养成方法Fine · 1080P',0),
+                ('路人女主的养成方法','正片 · 1080P',0),
+                ('路人女主的养成方法 Fine','预告片',0),
+                ('路人女主的养成方法 Fine','正片',2)]):
+                rows.append(field(1,field(1,encoded('https://cdn.example.com/feature.mp4'))+(field(2,episode) if episode or index else b'')+
+                    field(4,label)+field(5,'line-'+str(index))+field(6,title+' · H.264')))
+            return httpx.Response(200,json=list(b''.join(rows)))
+        provider=AniChSource(transport=httpx.MockTransport(handle));self.addCleanup(provider.close)
+        anime={'id':'bgm-231497','title':'路人女主的养成方法 Fine','episodes':1,'year':'2019'}
+        self.assertEqual(provider.discover(anime)[0],15261)
+        result=provider.resolve(15261,1)
+        self.assertEqual(result['status'],'ready')
+        self.assertEqual(len(result['lines']),3)
+        self.assertEqual(result['filtered_candidates'],3)
+        self.assertEqual(keywords,['路人女主的养成方法 Fine','路人女主的养成方法'])
+
+    def test_zero_sort_is_rejected_for_multiepisode_series(self):
+        original=self.handle
+        def handle(request):
+            response=original(request)
+            if '/detail/' in request.url.path:
+                return httpx.Response(200,json={**response.json(),'episodes_total':28})
+            if '/vod/' in request.url.path:
+                return httpx.Response(200,json=list(field(1,field(1,encoded('https://cdn.example.com/main.mp4'))+
+                    field(2,0)+field(4,'正片')+field(5,'line')+field(6,'葬送的芙莉莲 · H.264'))))
+            return response
+        provider=AniChSource(transport=httpx.MockTransport(handle));self.addCleanup(provider.close)
+        result=provider.resolve(32339,1)
+        self.assertEqual(result['status'],'unavailable')
+        self.assertEqual(result['reason'],'unverified_resources')

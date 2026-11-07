@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from anich_protocol import LIMIT, fields, decode_url
-from matching import exact_source, title_key, season_number, special_search_title
+from matching import exact_source, title_key, season_number, special_search_title, fallback_search_title
 from source_errors import SourceError
 
 
@@ -112,7 +112,7 @@ class AniChSource:
                     items.append({'id': row[1], 'title': text(row, 2), 'year': year, 'episodes': row.get(4, 0)})
                 return items
             except SourceError as error:
-                fallback = special_search_title(keyword)
+                fallback = fallback_search_title(keyword)
                 if error.status_code == 502 and fallback and fallback != keyword:
                     return self.search(fallback)
                 raise
@@ -141,7 +141,7 @@ class AniChSource:
     def discover(self, anime):
         candidates = {}
         queries = list(dict.fromkeys(value.strip()[:80] for value in
-            (anime.get('title', ''), special_search_title(anime.get('title', '')),
+            (anime.get('title', ''), fallback_search_title(anime.get('title', '')),
              anime.get('originalTitle', '')) if value.strip()))
         names = {title_key(value) for value in (anime.get('title', ''), anime.get('originalTitle', ''),
             *re.split(r'\s+/\s+', anime.get('aliases', ''))) if value}
@@ -219,16 +219,23 @@ class AniChSource:
             rows = messages(bytes(raw))
             names = {title_key(value) for value in [detail['title'], *detail.get('titles', [])]}
             target_season = season_number(detail['title'])
+            single_feature = available == {1} and detail.get('episodes_total') == 1 and episode_number == 1
             lines = {}
             rejected = 0
             for row in rows:
-                if row.get(2) != episode_number:
+                candidate_episode = row.get(2, 0)
+                feature_label = text(row, 4).split('·', 1)[0].strip()
+                zero_feature = single_feature and candidate_episode == 0 and (
+                    title_key(feature_label) in {'正片', '全集', '全片', '完整版', '全1集'} or
+                    title_key(feature_label) in names
+                )
+                if candidate_episode != episode_number and not zero_feature:
                     rejected += 1
                     continue
                 description = text(row, 6)
                 title = description.split('·', 1)[0].strip()
                 candidate_season = season_number(title)
-                if (candidate_season and candidate_season > 1 and candidate_season != target_season) or (title and title_key(title) not in names):
+                if (candidate_season and candidate_season > 1 and candidate_season != target_season) or ((title or zero_feature) and title_key(title) not in names):
                     rejected += 1
                     continue
                 try:

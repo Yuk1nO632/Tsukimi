@@ -1,6 +1,6 @@
 """Provider-independent name, alias and season evidence used by AniCh fallback."""
 import unittest
-from matching import exact_source, special_search_title
+from matching import exact_source, special_search_title, fallback_search_title
 
 
 class MatchingTests(unittest.TestCase):
@@ -21,3 +21,10 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(special_search_title('伪恋 特别篇'),'伪恋')
         self.assertEqual(special_search_title('测试 第二季 OVA'),'测试 第二季')
         self.assertEqual(special_search_title('ROAD'),'ROAD')
+
+    def test_latin_subtitle_search_does_not_change_regular_english_names(self):
+        self.assertEqual(fallback_search_title('路人女主的养成方法 Fine'),'路人女主的养成方法')
+        self.assertEqual(fallback_search_title('冴えない彼女の育てかた Fine'),'冴えない彼女の育てかた')
+        self.assertEqual(fallback_search_title('Fate/stay night'),'Fate/stay night')
+        self.assertEqual(fallback_search_title("BanG Dream! It's MyGO"),"BanG Dream! It's MyGO")
+        self.assertEqual(fallback_search_title('伪恋 OAD'),'伪恋')

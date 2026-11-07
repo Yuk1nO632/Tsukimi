@@ -16,6 +16,17 @@ def special_search_title(value):
     ).strip()
 
 
+def fallback_search_title(value):
+    """Use a series keyword for title-specific search errors, preserving identity separately."""
+    value = unicodedata.normalize("NFKC", str(value)).strip()
+    special = special_search_title(value)
+    if special != value:
+        return special
+    # Some AniCh searches reject a CJK title followed by a Latin subtitle such as Fine.
+    match = re.fullmatch(r"(.+[\u3040-\u30ff\u3400-\u9fff])\s+[A-Za-z][A-Za-z0-9\s!?'’.,:()_-]*", value)
+    return match[1].strip() if match else value
+
+
 def season_number(value):
     text = unicodedata.normalize("NFKC", str(value)).casefold()
     match = re.search(r"第\s*([一二三四五六七八九十0-9]+)\s*[季期部]|season\s*(\d+)|(\d+)(?:st|nd|rd|th)\s*season", text)
