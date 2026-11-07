@@ -337,3 +337,31 @@
     display: none;
   }
 }
+
+.security-fields {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+  display: grid;
+  gap: 18px;
+  margin: 0;
+}
+.security-fields legend {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 6px;
+}
+.security-fields .account-note {
+  margin: 0;
+}
+.security-question {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.security-question:last-of-type {
+  padding-bottom: 0;
+  border-bottom: 0;
+}

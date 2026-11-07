@@ -106,10 +106,24 @@ class Database:
             connection.execute("INSERT OR IGNORE INTO owned_source_bindings SELECT * FROM source_bindings")
             connection.execute("INSERT INTO migrations VALUES ('account_owners')")
 
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+        if "username" not in columns:
+            connection.execute("ALTER TABLE users ADD COLUMN username TEXT")
+        if "security_json" not in columns:
+            connection.execute("ALTER TABLE users ADD COLUMN security_json TEXT NOT NULL DEFAULT '[]'")
+        connection.execute("UPDATE users SET username = email WHERE username IS NULL")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username ON users(username)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS recovery_challenges (
+            token_hash TEXT PRIMARY KEY, session_hash TEXT NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
+            username TEXT NOT NULL, user_id TEXT, credential_version TEXT NOT NULL,
+            expires_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0)""")
+
     def user(self, owner_id):
         with self.connect() as connection:
-            row = connection.execute("SELECT id, email, nickname FROM users WHERE id = ?", (owner_id,)).fetchone()
-        return dict(zip(("id", "email", "nickname"), row)) if row else None
+            row = connection.execute("SELECT id, username, nickname, security_json FROM users WHERE id = ?", (owner_id,)).fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "username": row[1], "nickname": row[2], "security_configured": bool(json.loads(row[3]))}
 
     def progress(self, owner_id, anime_id):
         with self.connect() as connection:

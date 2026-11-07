@@ -1,59 +1,97 @@
 "use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAccount } from "./account-provider";
+
+const emptyQuestions = () =>
+  Array.from({ length: 3 }, () => ({ question: "", answer: "" }));
+
+function QuestionFields({ questions, onChange }) {
+  function update(index, field, value) {
+    onChange(
+      questions.map((item, current) =>
+        current === index ? { ...item, [field]: value } : item,
+      ),
+    );
+  }
+  return (
+    <fieldset className="security-fields">
+      <legend>设置三个密保问题</legend>
+      <p className="account-note">
+        请使用自己能记住、别人难以猜到的答案，避免生日、学校等公开信息。重置密码时需要全部答对。
+      </p>
+      {questions.map((item, index) => (
+        <div className="security-question" key={index}>
+          <label>
+            密保问题 {index + 1}
+            <input
+              required
+              minLength={4}
+              maxLength={100}
+              value={item.question}
+              placeholder="输入自定义问题"
+              onChange={(event) =>
+                update(index, "question", event.target.value)
+              }
+            />
+          </label>
+          <label>
+            密保答案 {index + 1}
+            <input
+              type="password"
+              autoComplete="off"
+              required
+              minLength={6}
+              maxLength={128}
+              value={item.answer}
+              placeholder="6–128 个字符"
+              onChange={(event) => update(index, "answer", event.target.value)}
+            />
+          </label>
+        </div>
+      ))}
+      <p className="account-note">
+        答案忽略首尾空格和英文大小写，三个问题及答案分别设置为不同内容。
+      </p>
+    </fieldset>
+  );
+}
 
 export default function AccountPanel() {
   const account = useAccount();
   const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
-  const [code, setCode] = useState("");
+  const [questions, setQuestions] = useState(emptyQuestions);
+  const [challenge, setChallenge] = useState(null);
+  const [answers, setAnswers] = useState(["", "", ""]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [remaining, setRemaining] = useState(0);
-  const [deadline, setDeadline] = useState(0);
-  const [importing, setImporting] = useState(false);
-  useEffect(() => {
-    if (!deadline) return;
-    const tick = () =>
-      setRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [deadline]);
-
   function changeMode(next) {
     setMode(next);
     setError("");
     setMessage("");
-    setCode("");
     setPassword("");
     setConfirmation("");
     setCurrentPassword("");
+    setChallenge(null);
+    setAnswers(["", "", ""]);
+    setQuestions(emptyQuestions());
   }
-  async function sendCode() {
+  async function loadQuestions() {
     setError("");
     setMessage("");
-    if (!email.trim()) {
-      setError("请先填写邮箱。");
+    setChallenge(null);
+    setAnswers(["", "", ""]);
+    if (!username.trim()) {
+      setError("请先填写账号名。");
       return;
     }
     try {
-      const result = await account.action("code", {
-        email,
-        purpose: mode === "register" ? "register" : "reset",
-      });
-      setDeadline(Date.now() + result.retry_after * 1000);
-      setMessage(
-        account.mail_mode === "file"
-          ? "验证码已写入本机开发邮箱文件，请按复习指南查看。"
-          : result.message,
-      );
+      setChallenge(await account.action("recovery", { username }));
     } catch (failure) {
       setError(failure.message);
     }
@@ -62,8 +100,12 @@ export default function AccountPanel() {
     event.preventDefault();
     setError("");
     setMessage("");
-    if (mode !== "login" && password !== confirmation) {
+    if (!["login", "security"].includes(mode) && password !== confirmation) {
       setError("两次输入的密码不一致。");
+      return;
+    }
+    if (mode === "reset" && !challenge) {
+      setError("请先获取密保问题。");
       return;
     }
     try {
@@ -72,31 +114,42 @@ export default function AccountPanel() {
         register: "register",
         reset: "reset-password",
         password: "password",
+        security: "security-questions",
       }[mode];
       const payload =
         mode === "password"
           ? { current_password: currentPassword, password }
-          : {
-              email,
-              password,
-              ...(mode !== "login" ? { code } : {}),
-              ...(mode === "register" ? { nickname } : {}),
-            };
+          : mode === "security"
+            ? { current_password: currentPassword, questions }
+            : {
+                username,
+                password,
+                ...(mode === "register" ? { nickname, questions } : {}),
+                ...(mode === "reset"
+                  ? { challenge: challenge.challenge, answers }
+                  : {}),
+              };
       const data = await account.action(path, payload);
       setPassword("");
       setConfirmation("");
-      setCode("");
       setCurrentPassword("");
+      setQuestions(emptyQuestions());
+      setAnswers(["", "", ""]);
+      setChallenge(null);
       setMessage(
-        data.message || (mode === "register" ? "注册成功。" : "登录成功。"),
+        data.message ||
+          (mode === "security"
+            ? "密保问题已更新。"
+            : mode === "register"
+              ? "注册成功。"
+              : "登录成功。"),
       );
-      if (mode === "reset" || mode === "password") setMode("login");
+      if (["reset", "password", "security"].includes(mode)) setMode("login");
     } catch (failure) {
       setError(failure.message);
     }
   }
   async function importData(action) {
-    setImporting(true);
     setError("");
     try {
       await account.action("import", { action });
@@ -108,8 +161,6 @@ export default function AccountPanel() {
       );
     } catch (failure) {
       setError(failure.message);
-    } finally {
-      setImporting(false);
     }
   }
   async function logout() {
@@ -122,22 +173,13 @@ export default function AccountPanel() {
       setError(failure.message);
     }
   }
-  const titles = {
-    login: "欢迎回来",
-    register: "创建账号",
-    reset: "找回密码",
-    password: "修改密码",
-  };
-  const showForm = !account.user || mode === "password";
+  const editing = mode === "password" || mode === "security";
+  const showForm = !account.user || editing;
   return (
     <div className="content-shell account-page">
       <section className="account-intro">
         <span className="portal-eyebrow">TSUKIMI ACCOUNT</span>
-        <h1>
-          你的片单，
-          <br />
-          随时接着看。
-        </h1>
+        <h1>我的账号</h1>
         <p>登录同一个账号，在电脑和手机上继续追番。</p>
         <div className="account-benefits">
           <span>片单同步</span>
@@ -164,15 +206,17 @@ export default function AccountPanel() {
           </>
         ) : (
           <>
-            {account.user && mode !== "password" ? (
+            {account.user && !editing ? (
               <>
                 <div className="account-avatar" aria-hidden="true">
                   {account.user.nickname.slice(0, 1)}
                 </div>
                 <h2>{account.user.nickname}</h2>
-                <p className="account-email">{account.user.email}</p>
+                <p className="account-email">账号名 {account.user.username}</p>
                 <p className="account-note">
-                  片单、观看进度与来源偏好已关联到此账号。
+                  {account.user.security_configured
+                    ? "已设置密保问题，可用于忘记密码后重置。"
+                    : "请补设密保问题，以便忘记密码时找回账号。"}
                 </p>
                 {account.pending_import && (
                   <div className="account-import" role="status">
@@ -183,14 +227,14 @@ export default function AccountPanel() {
                     <div>
                       <button
                         className="solid-button"
-                        disabled={account.busy || importing}
+                        disabled={account.busy}
                         onClick={() => void importData("merge")}
                       >
                         导入这些记录
                       </button>
                       <button
                         className="text-button"
-                        disabled={account.busy || importing}
+                        disabled={account.busy}
                         onClick={() => void importData("skip")}
                       >
                         使用账号记录
@@ -209,6 +253,14 @@ export default function AccountPanel() {
                     修改密码
                   </button>
                   <button
+                    className="outline-button"
+                    onClick={() => changeMode("security")}
+                  >
+                    {account.user.security_configured
+                      ? "修改密保问题"
+                      : "设置密保问题"}
+                  </button>
+                  <button
                     className="text-button"
                     disabled={account.busy}
                     onClick={() => void logout()}
@@ -225,7 +277,14 @@ export default function AccountPanel() {
                   aria-label="账号操作"
                 >
                   {(account.user
-                    ? [["password", "修改密码"]]
+                    ? [
+                        [
+                          mode,
+                          editing && mode === "security"
+                            ? "设置密保"
+                            : "修改密码",
+                        ],
+                      ]
                     : [
                         ["login", "登录"],
                         ["register", "注册"],
@@ -235,42 +294,51 @@ export default function AccountPanel() {
                     <button
                       type="button"
                       key={value}
-                      aria-pressed={mode === value}
                       disabled={account.busy}
+                      aria-pressed={mode === value}
                       onClick={() => changeMode(value)}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
-                <h2>{titles[mode]}</h2>
-                {!account.mail_ready &&
-                  mode !== "login" &&
-                  mode !== "password" && (
-                    <p className="account-note">
-                      邮件服务尚未配置。可按指南启用本地开发邮箱，完成本机复习。
-                    </p>
-                  )}
-                {account.mail_mode === "file" && (
-                  <p className="account-dev-label">
-                    本地开发邮箱 · 验证码写入本机文件
-                  </p>
-                )}
+                <h2>
+                  {
+                    {
+                      login: "欢迎回来",
+                      register: "创建账号",
+                      reset: "找回密码",
+                      password: "修改密码",
+                      security: "设置密保问题",
+                    }[mode]
+                  }
+                </h2>
               </>
             )}
             {showForm && (
               <form onSubmit={submit} className="account-form">
-                {mode !== "password" && (
+                {!editing && (
                   <label>
-                    邮箱
+                    账号名
                     <input
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
+                      autoComplete="username"
+                      value={username}
                       required
-                      maxLength={254}
-                      placeholder="you@example.com"
+                      maxLength={mode === "register" ? 32 : 254}
+                      minLength={mode === "register" ? 4 : 3}
+                      pattern={
+                        mode === "register" ? "[A-Za-z0-9_]{4,32}" : undefined
+                      }
+                      placeholder={
+                        mode === "register"
+                          ? "4–32 位英文字母、数字或下划线"
+                          : "账号名或原邮箱账号"
+                      }
+                      onChange={(event) => {
+                        setUsername(event.target.value);
+                        setChallenge(null);
+                        setAnswers(["", "", ""]);
+                      }}
                     />
                   </label>
                 )}
@@ -280,48 +348,64 @@ export default function AccountPanel() {
                     <input
                       autoComplete="nickname"
                       value={nickname}
-                      onChange={(event) => setNickname(event.target.value)}
                       required
                       maxLength={30}
+                      onChange={(event) => setNickname(event.target.value)}
                     />
                   </label>
                 )}
-                {(mode === "register" || mode === "reset") && (
-                  <label>
-                    邮箱验证码
-                    <span className="account-code-row">
-                      <input
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        pattern="[0-9]{6}"
-                        maxLength={6}
-                        required
-                        value={code}
-                        onChange={(event) => setCode(event.target.value)}
-                        placeholder="6 位验证码"
-                      />
-                      <button
-                        type="button"
-                        className="outline-button"
-                        disabled={
-                          account.busy || remaining > 0 || !account.mail_ready
-                        }
-                        onClick={() => void sendCode()}
-                      >
-                        {remaining > 0 ? `${remaining} 秒后重发` : "发送验证码"}
-                      </button>
-                    </span>
-                  </label>
+                {mode === "reset" && (
+                  <>
+                    <button
+                      className="outline-button"
+                      type="button"
+                      disabled={account.busy}
+                      onClick={() => void loadQuestions()}
+                    >
+                      {challenge ? "重新获取密保问题" : "获取密保问题"}
+                    </button>
+                    {challenge && (
+                      <fieldset className="security-fields">
+                        <legend>回答注册时的三个问题</legend>
+                        <p className="account-note">
+                          本次问题校验 5 分钟有效，最多尝试 5 次。
+                        </p>
+                        {challenge.questions.map((question, index) => (
+                          <label key={index}>
+                            {question}
+                            <input
+                              aria-label={`密保答案 ${index + 1}`}
+                              type="password"
+                              autoComplete="off"
+                              required
+                              minLength={6}
+                              maxLength={128}
+                              value={answers[index]}
+                              onChange={(event) =>
+                                setAnswers(
+                                  answers.map((value, current) =>
+                                    current === index
+                                      ? event.target.value
+                                      : value,
+                                  ),
+                                )
+                              }
+                            />
+                          </label>
+                        ))}
+                      </fieldset>
+                    )}
+                  </>
                 )}
-                {mode === "password" && (
+                {editing && (
                   <label>
                     当前密码
                     <input
                       type="password"
                       autoComplete="current-password"
+                      required
                       minLength={10}
                       maxLength={128}
-                      required
                       value={currentPassword}
                       onChange={(event) =>
                         setCurrentPassword(event.target.value)
@@ -329,38 +413,50 @@ export default function AccountPanel() {
                     />
                   </label>
                 )}
-                <label>
-                  {mode === "login" || mode === "register" ? "密码" : "新密码"}
-                  <input
-                    type="password"
-                    autoComplete={
-                      mode === "login" ? "current-password" : "new-password"
-                    }
-                    minLength={10}
-                    maxLength={128}
-                    required
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="10–128 个字符"
+                {mode !== "security" && (
+                  <>
+                    <label>
+                      {["login", "register"].includes(mode) ? "密码" : "新密码"}
+                      <input
+                        type="password"
+                        autoComplete={
+                          mode === "login" ? "current-password" : "new-password"
+                        }
+                        minLength={10}
+                        maxLength={128}
+                        required
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder="10–128 个字符"
+                      />
+                    </label>
+                    {mode !== "login" && (
+                      <label>
+                        确认密码
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          minLength={10}
+                          maxLength={128}
+                          required
+                          value={confirmation}
+                          onChange={(event) =>
+                            setConfirmation(event.target.value)
+                          }
+                        />
+                      </label>
+                    )}
+                  </>
+                )}
+                {["register", "security"].includes(mode) && (
+                  <QuestionFields
+                    questions={questions}
+                    onChange={setQuestions}
                   />
-                </label>
-                {mode !== "login" && (
-                  <label>
-                    确认密码
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      minLength={10}
-                      maxLength={128}
-                      required
-                      value={confirmation}
-                      onChange={(event) => setConfirmation(event.target.value)}
-                    />
-                  </label>
                 )}
                 <button
                   className="solid-button"
-                  disabled={account.busy}
+                  disabled={account.busy || (mode === "reset" && !challenge)}
                   type="submit"
                 >
                   {account.busy
@@ -370,9 +466,10 @@ export default function AccountPanel() {
                         register: "注册并登录",
                         reset: "重置密码",
                         password: "保存新密码",
+                        security: "保存密保问题",
                       }[mode]}
                 </button>
-                {mode === "password" && (
+                {editing && (
                   <button
                     type="button"
                     className="text-button"

@@ -1,7 +1,7 @@
-"""Email accounts, bounded OTP verification and explicit anonymous import."""
+"""Username accounts and password recovery with three hashed security answers."""
 
 import hashlib
-import hmac
+import json
 import re
 import secrets
 import time
@@ -15,49 +15,97 @@ PASSWORDS = PasswordHash.recommended()
 DUMMY_HASH = PASSWORDS.hash(secrets.token_urlsafe(32))
 
 
-class EmailInput(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
+def answer_text(value):
+    import unicodedata
 
-    @field_validator("email")
+    return unicodedata.normalize("NFKC", value).strip().casefold()
+
+
+class UsernameInput(BaseModel):
+    username: str = Field(min_length=3, max_length=254)
+
+    @field_validator("username")
     @classmethod
-    def normalize_email(cls, value):
-        value = value.strip().lower()
-        if not re.fullmatch(
-            r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}",
-            value,
-        ):
-            raise ValueError("请输入有效的邮箱地址")
-        return value
+    def normalize_username(cls, value):
+        return value.strip().lower()
 
 
-class CodeInput(EmailInput):
-    purpose: Literal["register", "reset"]
-
-
-class LoginInput(EmailInput):
+class LoginInput(UsernameInput):
     password: str = Field(min_length=10, max_length=128)
 
 
-class RegisterInput(LoginInput):
-    code: str = Field(pattern=r"^[0-9]{6}$")
+class SecurityQuestion(BaseModel):
+    question: str = Field(min_length=4, max_length=100)
+    answer: str = Field(min_length=6, max_length=128)
+
+    @field_validator("question")
+    @classmethod
+    def trim_question(cls, value):
+        value = value.strip()
+        if len(value) < 4:
+            raise ValueError("问题至少需要 4 个字符")
+        return value
+
+    @field_validator("answer")
+    @classmethod
+    def normalize_answer(cls, value):
+        value = answer_text(value)
+        if len(value) < 6:
+            raise ValueError("密保答案至少需要 6 个字符")
+        return value
+
+
+class SecuritySetup(BaseModel):
+    questions: list[SecurityQuestion] = Field(min_length=3, max_length=3)
+
+    @field_validator("questions")
+    @classmethod
+    def distinct_questions(cls, value):
+        if (
+            len({item.question.casefold() for item in value}) != 3
+            or len({item.answer for item in value}) != 3
+        ):
+            raise ValueError("请设置三个不同的问题和答案")
+        return value
+
+
+class RegisterInput(LoginInput, SecuritySetup):
     nickname: str = Field(min_length=1, max_length=30)
+
+    @field_validator("username")
+    @classmethod
+    def new_username(cls, value):
+        if not re.fullmatch(r"[a-z0-9_]{4,32}", value):
+            raise ValueError("账号名使用 4–32 位英文字母、数字或下划线")
+        return value
 
     @field_validator("nickname")
     @classmethod
     def nickname_text(cls, value):
-        value = value.strip()
-        if not value:
+        if not value.strip():
             raise ValueError("请填写昵称")
-        return value
+        return value.strip()
 
 
 class ResetInput(LoginInput):
-    code: str = Field(pattern=r"^[0-9]{6}$")
+    challenge: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+    answers: list[str] = Field(min_length=3, max_length=3)
+
+    @field_validator("answers")
+    @classmethod
+    def normalize_answers(cls, values):
+        if any(not 6 <= len(answer_text(value)) <= 128 for value in values):
+            raise ValueError("密保答案长度应为 6–128 个字符")
+        return [answer_text(value) for value in values]
 
 
 class PasswordInput(BaseModel):
     current_password: str = Field(min_length=10, max_length=128)
     password: str = Field(min_length=10, max_length=128)
+
+
+class SecurityUpdate(SecuritySetup):
+    current_password: str = Field(min_length=10, max_length=128)
 
 
 class ImportInput(BaseModel):
@@ -68,25 +116,8 @@ def scope_value(token):
     return hashlib.sha256(f"scope:{token}".encode()).hexdigest() if token else None
 
 
-def create_account_router(store, sessions, mailer):
+def create_account_router(store, sessions):
     router = APIRouter(prefix="/api/account")
-
-    def code_digest(email, purpose, code):
-        with store.connect() as connection:
-            row = connection.execute(
-                "SELECT value FROM app_secrets WHERE name = 'otp'"
-            ).fetchone()
-            if row is None:
-                connection.execute(
-                    "INSERT OR IGNORE INTO app_secrets VALUES ('otp', ?)",
-                    (secrets.token_hex(32),),
-                )
-                row = connection.execute(
-                    "SELECT value FROM app_secrets WHERE name = 'otp'"
-                ).fetchone()
-        return hmac.new(
-            row[0].encode(), f"{email}:{purpose}:{code}".encode(), hashlib.sha256
-        ).hexdigest()
 
     def scope(request):
         return scope_value(sessions.token_hash(request))
@@ -112,13 +143,13 @@ def create_account_router(store, sessions, mailer):
         if not allowed:
             raise HTTPException(429, "操作过于频繁，请稍后再试。")
 
-    def guard(request, email, operation):
+    def guard(request, username, operation):
         ip = request.client.host if request.client else "unknown"
         limit(f"{operation}:ip:{ip}", 30, 3600)
         limit(
-            f"{operation}:email:{email}",
-            8 if operation == "code" else 10,
-            3600 if operation == "code" else 900,
+            f"{operation}:username:{username}",
+            10,
+            900,
         )
 
     def state(owner, token):
@@ -130,23 +161,7 @@ def create_account_router(store, sessions, mailer):
             "user": store.user(owner),
             "scope": scope_value(token),
             "pending_import": bool(pending),
-            "mail_ready": mailer.ready,
-            "mail_mode": mailer.mode,
         }
-
-    def verified(connection, email, purpose, digest):
-        row = connection.execute(
-            "SELECT digest, expires_at, attempts FROM email_codes WHERE email = ? AND purpose = ?",
-            (email, purpose),
-        ).fetchone()
-        if not row or row[1] <= int(time.time()) or row[2] >= 5:
-            return False
-        valid = hmac.compare_digest(row[0], digest)
-        connection.execute(
-            "UPDATE email_codes SET attempts = attempts + 1 WHERE email = ? AND purpose = ?",
-            (email, purpose),
-        )
-        return valid
 
     def login_session(request, response, user_id, connection):
         old_token = sessions.token_hash(request)
@@ -182,102 +197,96 @@ def create_account_router(store, sessions, mailer):
         owner, token = sessions.issue(response)
         return state(owner, token)
 
-    @router.post("/code")
-    def send_code(payload: CodeInput, request: Request):
-        if not mailer.ready:
-            raise HTTPException(
-                503, "邮件服务尚未配置，请按账号指南启用本地开发邮箱或腾讯云 SES。"
-            )
-        if mailer.mode == "file" and (
-            request.client is None
-            or request.client.host not in {"127.0.0.1", "::1", "testclient"}
-        ):
-            raise HTTPException(403, "开发邮箱仅供本机验收。")
-        guard(request, payload.email, "code")
-        now = int(time.time())
-        code = f"{secrets.randbelow(1000000):06d}"
-        digest = code_digest(payload.email, payload.purpose, code)
-        generation = secrets.token_hex(16)
-        with store.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            previous = connection.execute(
-                "SELECT sent_at FROM email_codes WHERE email = ? AND purpose = ?",
-                (payload.email, payload.purpose),
-            ).fetchone()
-            if previous and previous[0] > now - 60:
-                raise HTTPException(429, "请间隔 60 秒再发送验证码。")
-            exists = (
-                connection.execute(
-                    "SELECT 1 FROM users WHERE email = ?", (payload.email,)
-                ).fetchone()
-                is not None
-            )
-            connection.execute(
-                "INSERT OR REPLACE INTO email_codes VALUES (?, ?, ?, ?, 0, ?, ?)",
-                (payload.email, payload.purpose, digest, now + 300, now, generation),
-            )
-        deliver = (payload.purpose == "register" and not exists) or (
-            payload.purpose == "reset" and exists
+    def encoded_questions(questions):
+        return json.dumps(
+            [
+                {"question": item.question, "hash": PASSWORDS.hash(item.answer)}
+                for item in questions
+            ],
+            ensure_ascii=False,
         )
-        if deliver:
-            try:
-                mailer.send(payload.email, payload.purpose, code)
-            except Exception:
-                with store.connect() as connection:
-                    connection.execute(
-                        "DELETE FROM email_codes WHERE email = ? AND purpose = ? AND generation = ?",
-                        (payload.email, payload.purpose, generation),
-                    )
-                raise
-        return {
-            "message": "如果该邮箱符合操作条件，验证码将发送至邮箱。",
-            "retry_after": 60,
-        }
 
     @router.post("/register")
     def register(payload: RegisterInput, request: Request, response: Response):
-        guard(request, payload.email, "register")
-        digest = code_digest(payload.email, "register", payload.code)
+        guard(request, payload.username, "register")
         password_hash = PASSWORDS.hash(payload.password)
+        security_json = encoded_questions(payload.questions)
         owner = secrets.token_hex(16)
         with store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            valid = verified(connection, payload.email, "register", digest)
             exists = connection.execute(
-                "SELECT 1 FROM users WHERE email = ?", (payload.email,)
+                "SELECT 1 FROM users WHERE username = ?", (payload.username,)
             ).fetchone()
-            success = valid and not exists
-            if success:
-                connection.execute("INSERT INTO owners VALUES (?)", (owner,))
-                connection.execute(
-                    "INSERT INTO users VALUES (?, ?, ?, ?, ?)",
-                    (
-                        owner,
-                        payload.email,
-                        payload.nickname,
-                        password_hash,
-                        int(time.time()),
-                    ),
-                )
-                connection.execute(
-                    "DELETE FROM email_codes WHERE email = ? AND purpose = 'register'",
-                    (payload.email,),
-                )
-                token = login_session(request, response, owner, connection)
-        if not success:
-            raise HTTPException(400, "注册未完成，请确认邮箱、验证码及账号是否已注册。")
+            if exists:
+                raise HTTPException(409, "该账号名已被使用，请换一个。")
+            connection.execute("INSERT INTO owners VALUES (?)", (owner,))
+            # Legacy email is NOT NULL/UNIQUE. This reserved internal value represents an unbound account.
+            connection.execute(
+                """INSERT INTO users (id, email, nickname, password_hash, created_at, username, security_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    owner,
+                    f"unbound:{owner}",
+                    payload.nickname,
+                    password_hash,
+                    int(time.time()),
+                    payload.username,
+                    security_json,
+                ),
+            )
+            token = login_session(request, response, owner, connection)
         return state(owner, token)
+
+    def credential_version(row):
+        return hashlib.sha256((row[1] + row[2]).encode()).hexdigest()
+
+    @router.post("/recovery")
+    def recovery(payload: UsernameInput, request: Request):
+        guard(request, payload.username, "recovery")
+        session_hash = sessions.token_hash(request)
+        if not session_hash:
+            raise HTTPException(401, "请刷新页面后重试。")
+        token = secrets.token_urlsafe(32)
+        with store.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM recovery_challenges WHERE expires_at < ?",
+                (int(time.time()),),
+            )
+            row = connection.execute(
+                "SELECT id, password_hash, security_json FROM users WHERE username = ?",
+                (payload.username,),
+            ).fetchone()
+            questions = json.loads(row[2]) if row else []
+            prompts = [item["question"] for item in questions] or [
+                "注册时设置的第一个密保问题？",
+                "注册时设置的第二个密保问题？",
+                "注册时设置的第三个密保问题？",
+            ]
+            connection.execute(
+                "INSERT INTO recovery_challenges VALUES (?, ?, ?, ?, ?, ?, 0)",
+                (
+                    hashlib.sha256(token.encode()).hexdigest(),
+                    session_hash,
+                    payload.username,
+                    row[0] if row and questions else None,
+                    credential_version(row) if row else "",
+                    int(time.time()) + 300,
+                ),
+            )
+        return {"challenge": token, "questions": prompts, "expires_in": 300}
 
     @router.post("/login")
     def login(payload: LoginInput, request: Request, response: Response):
-        guard(request, payload.email, "login")
+        guard(request, payload.username, "login")
         with store.connect() as connection:
             row = connection.execute(
-                "SELECT id, password_hash FROM users WHERE email = ?", (payload.email,)
+                "SELECT id, password_hash FROM users WHERE username = ?",
+                (payload.username,),
             ).fetchone()
         valid = PASSWORDS.verify(payload.password, row[1] if row else DUMMY_HASH)
         if not valid or not row:
-            raise HTTPException(401, "邮箱或密码有误。")
+            raise HTTPException(401, "账号名或密码有误。")
         with store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if (
@@ -306,33 +315,92 @@ def create_account_router(store, sessions, mailer):
 
     @router.post("/reset-password")
     def reset_password(payload: ResetInput, request: Request):
-        guard(request, payload.email, "reset")
-        digest = code_digest(payload.email, "reset", payload.code)
-        password_hash = PASSWORDS.hash(payload.password)
+        guard(request, payload.username, "reset")
+        token_hash = hashlib.sha256(payload.challenge.encode()).hexdigest()
+        with store.connect() as connection:
+            challenge = connection.execute(
+                "SELECT user_id, credential_version, expires_at, attempts, session_hash, username FROM recovery_challenges WHERE token_hash = ?",
+                (token_hash,),
+            ).fetchone()
+            row = connection.execute(
+                "SELECT id, password_hash, security_json FROM users WHERE username = ?",
+                (payload.username,),
+            ).fetchone()
+        valid = bool(
+            challenge
+            and row
+            and challenge[0] == row[0]
+            and challenge[1] == credential_version(row)
+            and challenge[2] > time.time()
+            and challenge[3] < 5
+            and challenge[4] == sessions.token_hash(request)
+            and challenge[5] == payload.username
+        )
+        questions = json.loads(row[2]) if valid else []
+        matches = [
+            PASSWORDS.verify(
+                answer, questions[index]["hash"] if len(questions) == 3 else DUMMY_HASH
+            )
+            for index, answer in enumerate(payload.answers)
+        ]
+        new_hash = PASSWORDS.hash(payload.password) if valid and all(matches) else None
         with store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            valid = verified(connection, payload.email, "reset", digest)
-            row = connection.execute(
-                "SELECT id FROM users WHERE email = ?", (payload.email,)
-            ).fetchone()
-            success = valid and row is not None
-            if success:
-                connection.execute(
-                    "UPDATE users SET password_hash = ? WHERE id = ?",
-                    (password_hash, row[0]),
+            consumed = connection.execute(
+                "UPDATE recovery_challenges SET attempts=attempts+1 WHERE token_hash=? AND attempts < 5 AND expires_at > ? AND session_hash=?",
+                (token_hash, int(time.time()), sessions.token_hash(request)),
+            ).rowcount
+            success = False
+            if consumed and new_hash:
+                success = bool(
+                    connection.execute(
+                        "UPDATE users SET password_hash=? WHERE id=? AND password_hash=? AND security_json=?",
+                        (new_hash, row[0], row[1], row[2]),
+                    ).rowcount
                 )
-                connection.execute(
-                    "DELETE FROM email_codes WHERE email = ?", (payload.email,)
-                )
-                connection.execute("DELETE FROM sessions WHERE owner_id = ?", (row[0],))
+                if success:
+                    connection.execute(
+                        "DELETE FROM recovery_challenges WHERE user_id=?", (row[0],)
+                    )
+                    connection.execute(
+                        "DELETE FROM sessions WHERE owner_id=?", (row[0],)
+                    )
         if not success:
-            raise HTTPException(400, "邮箱或验证码有误，或验证码已过期。")
+            raise HTTPException(
+                400, "重置未完成，请确认账号名、三个密保答案及问题有效期。"
+            )
         return {"message": "密码已重置，请使用新密码登录。"}
+
+    @router.post("/security-questions")
+    def set_security(payload: SecurityUpdate, request: Request):
+        user = sessions.account(request)
+        guard(request, user["username"], "security")
+        with store.connect() as connection:
+            old_hash = connection.execute(
+                "SELECT password_hash FROM users WHERE id=?", (user["id"],)
+            ).fetchone()[0]
+        if not PASSWORDS.verify(payload.current_password, old_hash):
+            raise HTTPException(400, "当前密码有误。")
+        encoded = encoded_questions(payload.questions)
+        with store.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if (
+                sessions.current(request) != user["id"]
+                or not connection.execute(
+                    "UPDATE users SET security_json=? WHERE id=? AND password_hash=?",
+                    (encoded, user["id"], old_hash),
+                ).rowcount
+            ):
+                raise HTTPException(409, "账号状态已变化，请重新登录。")
+            connection.execute(
+                "DELETE FROM recovery_challenges WHERE user_id=?", (user["id"],)
+            )
+        return state(user["id"], sessions.token_hash(request))
 
     @router.post("/password")
     def change_password(payload: PasswordInput, request: Request):
         user = sessions.account(request)
-        guard(request, user["email"], "password")
+        guard(request, user["username"], "password")
         with store.connect() as connection:
             old_hash = connection.execute(
                 "SELECT password_hash FROM users WHERE id = ?", (user["id"],)
@@ -350,7 +418,7 @@ def create_account_router(store, sessions, mailer):
                 raise HTTPException(409, "密码已更新，请重新登录。")
             connection.execute("DELETE FROM sessions WHERE owner_id = ?", (user["id"],))
             connection.execute(
-                "DELETE FROM email_codes WHERE email = ?", (user["email"],)
+                "DELETE FROM recovery_challenges WHERE user_id = ?", (user["id"],)
             )
         return {"message": "密码已修改，请重新登录。"}
 

@@ -1,5 +1,3 @@
-"""Account/OTP/migration/progress regressions run against isolated SQLite files."""
-
 from contextlib import closing
 import hashlib
 import json
@@ -10,10 +8,8 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
-
 import httpx
 from fastapi.testclient import TestClient
-from fastapi import HTTPException
 from catalog import BangumiClient
 from database import Database
 from main import create_app, COOKIE_NAME
@@ -21,31 +17,23 @@ from main import create_app, COOKIE_NAME
 ANIME = "bgm-400602"
 OTHER = "bgm-328609"
 PASSWORD = "test-password-123"
-
-
-class FakeMailer:
-    ready = True
-    mode = "test"
-
-    def __init__(self):
-        self.messages = []
-
-    def send(self, email, purpose, code):
-        self.messages.append((email, purpose, code))
+QUESTIONS = [
+    {"question": "第一个自定义问题？", "answer": "secret-answer-one"},
+    {"question": "第二个自定义问题？", "answer": "secret-answer-two"},
+    {"question": "第三个自定义问题？", "answer": "secret-answer-three"},
+]
 
 
 class AccountProgressTests(unittest.TestCase):
     def setUp(self):
         self.directory = self.enterContext(tempfile.TemporaryDirectory())
         self.path = Path(self.directory) / "test.db"
-        self.mail = FakeMailer()
 
     def client(self):
         return self.enterContext(
             TestClient(
                 create_app(
                     database_path=self.path,
-                    mail_sender=self.mail,
                     metadata_source=BangumiClient(
                         transport=httpx.MockTransport(
                             lambda request: httpx.Response(404)
@@ -55,25 +43,23 @@ class AccountProgressTests(unittest.TestCase):
             )
         )
 
-    def register(self, client, email="first@example.com"):
+    def register(self, client, username="first_user"):
         client.get("/api/account")
-        self.assertEqual(
-            client.post(
-                "/api/account/code", json={"email": email, "purpose": "register"}
-            ).status_code,
-            200,
-        )
         response = client.post(
             "/api/account/register",
             json={
-                "email": email,
+                "username": username,
                 "password": PASSWORD,
                 "nickname": "测试用户",
-                "code": self.mail.messages[-1][2],
+                "questions": QUESTIONS,
             },
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
+
+    def sql(self, statement, args=()):
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            return connection.execute(statement, args).fetchall()
 
     def payload(self, client, revision=0, episode=1, position=120):
         return {
@@ -87,133 +73,15 @@ class AccountProgressTests(unittest.TestCase):
             "line_id": 1,
         }
 
-    def sql(self, statement, args=()):
-        with closing(sqlite3.connect(self.path)) as connection, connection:
-            return connection.execute(statement, args).fetchall()
-
-    def test_verified_registration_normalizes_email_and_hashes_secrets(self):
-        client = self.client()
-        state = self.register(client, "FIRST@example.com")
-        self.assertEqual(state["user"]["email"], "first@example.com")
-        saved = self.sql("SELECT password_hash FROM users")[0][0]
-        self.assertTrue(saved.startswith("$argon2id$"))
-        self.assertNotIn(PASSWORD, saved)
-        self.assertEqual(self.sql("SELECT COUNT(*) FROM email_codes")[0][0], 0)
-
-    def test_registration_requires_valid_unexpired_otp(self):
-        client = self.client()
-        client.post(
-            "/api/account/code",
-            json={"email": "first@example.com", "purpose": "register"},
-        )
-        code = self.mail.messages[-1][2]
-        stored = self.sql("SELECT digest FROM email_codes")[0][0]
-        self.assertNotEqual(stored, code)
-        self.sql("UPDATE email_codes SET expires_at=0")
-        response = client.post(
-            "/api/account/register",
-            json={
-                "email": "first@example.com",
-                "password": PASSWORD,
-                "nickname": "用户",
-                "code": code,
-            },
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(self.sql("SELECT COUNT(*) FROM users")[0][0], 0)
-
-    def test_five_failed_attempts_persist_and_disable_code(self):
-        client = self.client()
-        client.post(
-            "/api/account/code",
-            json={"email": "first@example.com", "purpose": "register"},
-        )
-        code = self.mail.messages[-1][2]
-        wrong = "000000" if code != "000000" else "111111"
-        data = {
-            "email": "first@example.com",
-            "password": PASSWORD,
-            "nickname": "用户",
-            "code": wrong,
+    def recovery(self, client, username="first_user"):
+        response = client.post("/api/account/recovery", json={"username": username})
+        self.assertEqual(response.status_code, 200, response.text)
+        return {
+            "username": username,
+            "challenge": response.json()["challenge"],
+            "answers": [q["answer"] for q in QUESTIONS],
+            "password": "new-password-456",
         }
-        for _ in range(5):
-            self.assertEqual(
-                client.post("/api/account/register", json=data).status_code, 400
-            )
-        self.assertEqual(self.sql("SELECT attempts FROM email_codes")[0][0], 5)
-        data["code"] = code
-        self.assertEqual(
-            client.post("/api/account/register", json=data).status_code, 400
-        )
-
-    def test_cooldown_resend_replaces_old_code_and_purposes_are_isolated(self):
-        client = self.client()
-        client.post(
-            "/api/account/code",
-            json={"email": "first@example.com", "purpose": "register"},
-        )
-        self.assertEqual(
-            client.post(
-                "/api/account/code",
-                json={"email": "first@example.com", "purpose": "register"},
-            ).status_code,
-            429,
-        )
-        old = self.mail.messages[-1][2]
-        self.sql("UPDATE email_codes SET sent_at=0")
-        with patch("accounts.secrets.randbelow", return_value=(int(old) + 1) % 1000000):
-            self.assertEqual(
-                client.post(
-                    "/api/account/code",
-                    json={"email": "first@example.com", "purpose": "register"},
-                ).status_code,
-                200,
-            )
-        data = {
-            "email": "first@example.com",
-            "password": PASSWORD,
-            "nickname": "用户",
-            "code": old,
-        }
-        self.assertEqual(
-            client.post("/api/account/register", json=data).status_code, 400
-        )
-        data["code"] = self.mail.messages[-1][2]
-        self.assertEqual(
-            client.post("/api/account/reset-password", json=data).status_code, 400
-        )
-        self.assertEqual(
-            client.post("/api/account/register", json=data).status_code, 200
-        )
-
-    def test_delivery_failure_discards_code_without_leaking_it(self):
-        client = self.client()
-        with patch.object(
-            self.mail, "send", side_effect=HTTPException(503, "暂时无法发送")
-        ):
-            response = client.post(
-                "/api/account/code",
-                json={"email": "first@example.com", "purpose": "register"},
-            )
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(self.sql("SELECT COUNT(*) FROM email_codes")[0][0], 0)
-
-    def test_unregistered_reset_and_existing_registration_have_generic_response(self):
-        client = self.client()
-        response = client.post(
-            "/api/account/code",
-            json={"email": "missing@example.com", "purpose": "reset"},
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(self.mail.messages), 0)
-        self.register(client)
-        self.sql("UPDATE email_codes SET sent_at=0")
-        response2 = client.post(
-            "/api/account/code",
-            json={"email": "first@example.com", "purpose": "register"},
-        )
-        self.assertEqual(response.json(), response2.json())
-        self.assertEqual(len(self.mail.messages), 1)
 
     def test_anonymous_data_requires_explicit_import_and_import_is_idempotent(self):
         client = self.client()
@@ -264,7 +132,7 @@ class AccountProgressTests(unittest.TestCase):
         client.put(f"/api/collection/{OTHER}", json={"status": "wish"})
         client.post(
             "/api/account/login",
-            json={"email": "first@example.com", "password": PASSWORD},
+            json={"username": "first_user", "password": PASSWORD},
         )
         client.post("/api/account/import", json={"action": "merge"})
         rows = client.get("/api/collection").json()["items"]
@@ -277,7 +145,7 @@ class AccountProgressTests(unittest.TestCase):
         client.put(f"/api/progress/{ANIME}", json=self.payload(client))
         client.post(
             "/api/account/login",
-            json={"email": "first@example.com", "password": PASSWORD},
+            json={"username": "first_user", "password": PASSWORD},
         )
         result = client.post("/api/account/import", json={"action": "skip"}).json()
         self.assertFalse(result["pending_import"])
@@ -288,10 +156,10 @@ class AccountProgressTests(unittest.TestCase):
         second = self.client()
         other = self.client()
         self.register(first)
-        self.register(other, "other@example.com")
+        self.register(other, "other_user")
         response = second.post(
             "/api/account/login",
-            json={"email": "first@example.com", "password": PASSWORD},
+            json={"username": "first_user", "password": PASSWORD},
         )
         self.assertEqual(response.status_code, 200)
         self.assertNotEqual(
@@ -308,49 +176,6 @@ class AccountProgressTests(unittest.TestCase):
         second.post("/api/account/logout")
         self.assertEqual(len(first.get("/api/collection").json()["items"]), 1)
         self.assertEqual(second.get("/api/collection").json()["items"], [])
-
-    def test_reset_consumes_code_revokes_all_sessions_and_preserves_data(self):
-        first = self.client()
-        second = self.client()
-        self.register(first)
-        second.post(
-            "/api/account/login",
-            json={"email": "first@example.com", "password": PASSWORD},
-        )
-        first.put(f"/api/collection/{ANIME}", json={"status": "watching"})
-        first.post(
-            "/api/account/code", json={"email": "first@example.com", "purpose": "reset"}
-        )
-        payload = {
-            "email": "first@example.com",
-            "password": "new-password-456",
-            "code": self.mail.messages[-1][2],
-        }
-        self.assertEqual(
-            first.post("/api/account/reset-password", json=payload).status_code, 200
-        )
-        self.assertEqual(
-            second.put(f"/api/collection/{ANIME}", json={"status": "wish"}).status_code,
-            401,
-        )
-        self.assertEqual(
-            first.post("/api/account/reset-password", json=payload).status_code, 400
-        )
-        self.assertEqual(
-            first.post(
-                "/api/account/login",
-                json={"email": "first@example.com", "password": PASSWORD},
-            ).status_code,
-            401,
-        )
-        self.assertEqual(
-            first.post(
-                "/api/account/login",
-                json={"email": "first@example.com", "password": "new-password-456"},
-            ).status_code,
-            200,
-        )
-        self.assertEqual(len(first.get("/api/collection").json()["items"]), 1)
 
     def test_password_change_requires_old_password_and_revokes_sessions(self):
         client = self.client()
@@ -373,22 +198,6 @@ class AccountProgressTests(unittest.TestCase):
             200,
         )
         self.assertIsNone(client.get("/api/account").json()["user"])
-
-    def test_otp_attempts_rate_limit_survives_new_app_instance(self):
-        client = self.client()
-        for _ in range(10):
-            client.post(
-                "/api/account/login",
-                json={"email": "first@example.com", "password": PASSWORD},
-            )
-        other = self.client()
-        self.assertEqual(
-            other.post(
-                "/api/account/login",
-                json={"email": "first@example.com", "password": PASSWORD},
-            ).status_code,
-            429,
-        )
 
     def test_progress_cas_retries_rewind_and_episode_switch(self):
         client = self.client()
@@ -527,53 +336,151 @@ class AccountProgressTests(unittest.TestCase):
         Database(self.path).initialize()
         self.assertEqual(Database(self.path).list_favorites(digest), [ANIME])
 
-    def test_ses_sdk_request_uses_template_and_hides_credentials(self):
-        import os
-        from mailer import Mailer
+    def test_registration_hashes_three_answers_and_normalizes_username(self):
+        client = self.client()
+        state = self.register(client, "FIRST_USER")
+        self.assertEqual(state["user"]["username"], "first_user")
+        row = self.sql("SELECT password_hash,security_json FROM users")[0]
+        self.assertTrue(row[0].startswith("$argon2id$"))
+        for item in json.loads(row[1]):
+            self.assertTrue(item["hash"].startswith("$argon2id$"))
+        self.assertNotIn("secret-answer-one", row[1])
+        self.assertEqual(
+            client.post(
+                "/api/account/register",
+                json={
+                    "username": "first_user",
+                    "password": PASSWORD,
+                    "nickname": "用户",
+                    "questions": QUESTIONS,
+                },
+            ).status_code,
+            409,
+        )
 
-        environment = {
-            "TSUKIMI_MAIL_MODE": "ses",
-            "TSUKIMI_MAIL_FROM": "Tsukimi <noreply@mail.example.com>",
-            "TENCENTCLOUD_SECRET_ID": "test-id",
-            "TENCENTCLOUD_SECRET_KEY": "test-secret",
-            "TSUKIMI_SES_TEMPLATE_REGISTER": "100",
-            "TSUKIMI_SES_TEMPLATE_RESET": "200",
-        }
-        with patch.dict(os.environ, environment), patch(
-            "tencentcloud.ses.v20201002.ses_client.SesClient"
-        ) as client:
-            mailer = Mailer()
-            self.assertTrue(mailer.ready)
-            mailer.send("first@example.com", "register", "123456")
-            request = client.return_value.SendEmail.call_args.args[0]
-            self.assertEqual(request.Destination, ["first@example.com"])
-            self.assertEqual(request.Template.TemplateID, 100)
+    def test_reset_requires_all_answers_and_revokes_every_device(self):
+        first = self.client()
+        second = self.client()
+        self.register(first)
+        second.post(
+            "/api/account/login", json={"username": "first_user", "password": PASSWORD}
+        )
+        first.put(f"/api/collection/{ANIME}", json={"status": "watching"})
+        data = self.recovery(first)
+        bad = {**data, "answers": ["wrong-answer-one", *data["answers"][1:]]}
+        self.assertEqual(
+            first.post("/api/account/reset-password", json=bad).status_code, 400
+        )
+        data["answers"] = [
+            "  SECRET-ANSWER-ONE  ",
+            "secret-answer-two",
+            "secret-answer-three",
+        ]
+        self.assertEqual(
+            first.post("/api/account/reset-password", json=data).status_code, 200
+        )
+        self.assertEqual(
+            second.put(f"/api/collection/{ANIME}", json={"status": "wish"}).status_code,
+            401,
+        )
+        self.assertEqual(
+            first.post("/api/account/reset-password", json=data).status_code, 400
+        )
+        self.assertEqual(
+            first.post(
+                "/api/account/login",
+                json={"username": "first_user", "password": "new-password-456"},
+            ).status_code,
+            200,
+        )
+        self.assertEqual(len(first.get("/api/collection").json()["items"]), 1)
+
+    def test_recovery_expiry_attempt_limit_and_session_binding(self):
+        first = self.client()
+        second = self.client()
+        self.register(first)
+        second.get("/api/account")
+        data = self.recovery(first)
+        self.assertEqual(
+            second.post("/api/account/reset-password", json=data).status_code, 400
+        )
+        bad = {**data, "answers": ["wrong-answer"] * 3}
+        for _ in range(5):
             self.assertEqual(
-                json.loads(request.Template.TemplateData)["code"], "123456"
+                first.post("/api/account/reset-password", json=bad).status_code, 400
             )
-            self.assertEqual(request.TriggerType, 1)
+        self.assertEqual(
+            first.post("/api/account/reset-password", json=data).status_code, 400
+        )
+        data = self.recovery(first)
+        self.sql("UPDATE recovery_challenges SET expires_at=0")
+        self.assertEqual(
+            first.post("/api/account/reset-password", json=data).status_code, 400
+        )
 
-    def test_file_mail_requires_explicit_development_mode(self):
-        import os
-        from mailer import Mailer
+    def test_recovery_rate_limit_survives_restart(self):
+        client = self.client()
+        client.get("/api/account")
+        for _ in range(10):
+            client.post("/api/account/recovery", json={"username": "missing_user"})
+        restarted = self.client()
+        restarted.get("/api/account")
+        self.assertEqual(
+            restarted.post(
+                "/api/account/recovery", json={"username": "missing_user"}
+            ).status_code,
+            429,
+        )
 
-        with patch.dict(
-            os.environ, {"TSUKIMI_MAIL_MODE": "file", "TSUKIMI_ENV": "production"}
-        ):
-            self.assertFalse(Mailer().ready)
-        with patch.dict(
-            os.environ,
-            {
-                "TSUKIMI_MAIL_MODE": "file",
-                "TSUKIMI_ENV": "development",
-                "TSUKIMI_DEV_MAIL_FILE": str(Path(self.directory) / "mail.jsonl"),
-            },
-        ):
-            mailer = Mailer()
-            self.assertTrue(mailer.ready)
-            mailer.send("first@example.com", "register", "123456")
-            self.assertEqual(json.loads(mailer.file.read_text())["code"], "123456")
+    def test_legacy_email_login_and_setting_security_preserve_identity(self):
+        from accounts import PASSWORDS
 
+        client = self.client()
+        with Database(self.path).connect() as connection:
+            connection.execute("INSERT INTO owners VALUES ('legacy')")
+            connection.execute(
+                "INSERT INTO users (id,email,nickname,password_hash,created_at) VALUES ('legacy','old@example.com','旧用户',?,?)",
+                (PASSWORDS.hash(PASSWORD), int(time.time())),
+            )
+        Database(self.path).initialize()
+        response = client.post(
+            "/api/account/login",
+            json={"username": "old@example.com", "password": PASSWORD},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user"]["id"], "legacy")
+        self.assertFalse(response.json()["user"]["security_configured"])
+        data = {"current_password": PASSWORD, "questions": QUESTIONS}
+        self.assertEqual(
+            client.post(
+                "/api/account/security-questions",
+                json={**data, "current_password": "wrong-password"},
+            ).status_code,
+            400,
+        )
+        self.assertTrue(
+            client.post("/api/account/security-questions", json=data).json()["user"][
+                "security_configured"
+            ]
+        )
+        recovery = self.recovery(client, "old@example.com")
+        self.assertEqual(
+            client.post("/api/account/security-questions", json=data).status_code, 200
+        )
+        self.assertEqual(
+            client.post("/api/account/reset-password", json=recovery).status_code, 400
+        )
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_three_distinct_questions_and_answers_required(self):
+        client = self.client()
+        for questions in (QUESTIONS[:2], [QUESTIONS[0]] * 3):
+            response = client.post(
+                "/api/account/register",
+                json={
+                    "username": "valid_user",
+                    "password": PASSWORD,
+                    "nickname": "用户",
+                    "questions": questions,
+                },
+            )
+            self.assertEqual(response.status_code, 422)

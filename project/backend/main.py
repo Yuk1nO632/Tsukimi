@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 
 from sessions import Sessions, COOKIE_NAME
 from accounts import create_account_router
-from mailer import Mailer
 from progress import create_progress_router
 
 from database import Database
@@ -38,7 +37,7 @@ class CollectionUpdate(BaseModel):
 
 
 def create_app(database_path: Path | None = None, catalog_path: Path | None = None,
-               allowed_origins: set[str] | None = None, playback_source: AniChSource | None = None, metadata_source: BangumiClient | None = None, mail_sender=None) -> FastAPI:
+               allowed_origins: set[str] | None = None, playback_source: AniChSource | None = None, metadata_source: BangumiClient | None = None) -> FastAPI:
     store = Database(database_path or Path(os.getenv("TSUKIMI_DATABASE", str(BACKEND_ROOT / "data/tsukimi.db"))))
     metadata_provider = metadata_source or BangumiClient()
     playback_provider = playback_source or AniChSource()
@@ -49,7 +48,6 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
     secure_cookie = os.getenv("TSUKIMI_COOKIE_SECURE", "0") == "1"
 
     sessions = Sessions(store, secure_cookie)
-    mailer = mail_sender or Mailer()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
@@ -103,7 +101,7 @@ def create_app(database_path: Path | None = None, catalog_path: Path | None = No
     current_session = sessions.current
     require_session = sessions.require
     ensure_session = sessions.ensure
-    account_router, session_scope = create_account_router(store, sessions, mailer)
+    account_router, session_scope = create_account_router(store, sessions)
     application.include_router(account_router)
     application.include_router(create_progress_router(store, sessions, session_scope))
 
