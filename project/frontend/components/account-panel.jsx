@@ -59,6 +59,7 @@ function QuestionFields({ questions, onChange }) {
 
 export default function AccountPanel() {
   const account = useAccount();
+  const [registrationStep, setRegistrationStep] = useState(1);
   const [mode, setMode] = useState("login");
   const [username, setUsername] = useState("");
   const [nickname, setNickname] = useState("");
@@ -72,6 +73,7 @@ export default function AccountPanel() {
   const [error, setError] = useState("");
   function changeMode(next) {
     setMode(next);
+    setRegistrationStep(1);
     setError("");
     setMessage("");
     setPassword("");
@@ -106,6 +108,10 @@ export default function AccountPanel() {
     }
     if (mode === "reset" && !challenge) {
       setError("请先获取密保问题。");
+      return;
+    }
+    if (mode === "register" && registrationStep === 1) {
+      setRegistrationStep(2);
       return;
     }
     try {
@@ -176,20 +182,14 @@ export default function AccountPanel() {
   const editing = mode === "password" || mode === "security";
   const showForm = !account.user || editing;
   return (
-    <div className="content-shell account-page">
-      <section className="account-intro">
+    <div
+      className={`content-shell account-page${mode === "register" || mode === "security" ? " account-page-expanded" : ""}`}
+    >
+      <header className="account-intro">
         <span className="portal-eyebrow">TSUKIMI ACCOUNT</span>
-        <h1>我的账号</h1>
-        <p>登录同一个账号，在电脑和手机上继续追番。</p>
-        <div className="account-benefits">
-          <span>片单同步</span>
-          <span>观看进度</span>
-          <span>来源偏好</span>
-        </div>
-        <Link href="/collection" className="text-button">
-          查看我的追番 →
-        </Link>
-      </section>
+        <h1>{account.user ? "我的账号" : "登录与注册"}</h1>
+        <p>管理片单与观看进度</p>
+      </header>
       <section className="account-card" aria-label="账号管理">
         {!account.ready ? (
           <>
@@ -212,7 +212,12 @@ export default function AccountPanel() {
                   {account.user.nickname.slice(0, 1)}
                 </div>
                 <h2>{account.user.nickname}</h2>
-                <p className="account-email">账号名 {account.user.username}</p>
+                <p className="account-email">
+                  账号名 {account.user.username}
+                  {account.user.role === "admin" && (
+                    <span className="account-role">管理员</span>
+                  )}
+                </p>
                 <p className="account-note">
                   {account.user.security_configured
                     ? "已设置密保问题，可用于忘记密码后重置。"
@@ -306,7 +311,8 @@ export default function AccountPanel() {
                   {
                     {
                       login: "欢迎回来",
-                      register: "创建账号",
+                      register:
+                        registrationStep === 1 ? "创建账号" : "设置密保问题",
                       reset: "找回密码",
                       password: "修改密码",
                       security: "设置密保问题",
@@ -316,33 +322,51 @@ export default function AccountPanel() {
               </>
             )}
             {showForm && (
-              <form onSubmit={submit} className="account-form">
-                {!editing && (
-                  <label>
-                    账号名
-                    <input
-                      autoComplete="username"
-                      value={username}
-                      required
-                      maxLength={mode === "register" ? 32 : 254}
-                      minLength={mode === "register" ? 4 : 3}
-                      pattern={
-                        mode === "register" ? "[A-Za-z0-9_]{4,32}" : undefined
-                      }
-                      placeholder={
-                        mode === "register"
-                          ? "4–32 位英文字母、数字或下划线"
-                          : "账号名或原邮箱账号"
-                      }
-                      onChange={(event) => {
-                        setUsername(event.target.value);
-                        setChallenge(null);
-                        setAnswers(["", "", ""]);
-                      }}
-                    />
-                  </label>
-                )}
+              <form
+                onSubmit={submit}
+                className={`account-form${mode === "register" && registrationStep === 1 ? " account-form-identity" : ""}`}
+              >
                 {mode === "register" && (
+                  <ol className="registration-steps" aria-label="注册步骤">
+                    <li
+                      aria-current={registrationStep === 1 ? "step" : undefined}
+                    >
+                      <span>1</span>账号信息
+                    </li>
+                    <li
+                      aria-current={registrationStep === 2 ? "step" : undefined}
+                    >
+                      <span>2</span>密保设置
+                    </li>
+                  </ol>
+                )}
+                {!editing &&
+                  (mode !== "register" || registrationStep === 1) && (
+                    <label>
+                      账号名
+                      <input
+                        autoComplete="username"
+                        value={username}
+                        required
+                        maxLength={mode === "register" ? 32 : 254}
+                        minLength={mode === "register" ? 4 : 3}
+                        pattern={
+                          mode === "register" ? "[A-Za-z0-9_]{4,32}" : undefined
+                        }
+                        placeholder={
+                          mode === "register"
+                            ? "4–32 位英文字母、数字或下划线"
+                            : "账号名或原邮箱账号"
+                        }
+                        onChange={(event) => {
+                          setUsername(event.target.value);
+                          setChallenge(null);
+                          setAnswers(["", "", ""]);
+                        }}
+                      />
+                    </label>
+                  )}
+                {mode === "register" && registrationStep === 1 && (
                   <label>
                     昵称
                     <input
@@ -413,42 +437,48 @@ export default function AccountPanel() {
                     />
                   </label>
                 )}
-                {mode !== "security" && (
-                  <>
-                    <label>
-                      {["login", "register"].includes(mode) ? "密码" : "新密码"}
-                      <input
-                        type="password"
-                        autoComplete={
-                          mode === "login" ? "current-password" : "new-password"
-                        }
-                        minLength={10}
-                        maxLength={128}
-                        required
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        placeholder="10–128 个字符"
-                      />
-                    </label>
-                    {mode !== "login" && (
+                {mode !== "security" &&
+                  (mode !== "register" || registrationStep === 1) && (
+                    <>
                       <label>
-                        确认密码
+                        {["login", "register"].includes(mode)
+                          ? "密码"
+                          : "新密码"}
                         <input
                           type="password"
-                          autoComplete="new-password"
+                          autoComplete={
+                            mode === "login"
+                              ? "current-password"
+                              : "new-password"
+                          }
                           minLength={10}
                           maxLength={128}
                           required
-                          value={confirmation}
-                          onChange={(event) =>
-                            setConfirmation(event.target.value)
-                          }
+                          value={password}
+                          onChange={(event) => setPassword(event.target.value)}
+                          placeholder="10–128 个字符"
                         />
                       </label>
-                    )}
-                  </>
-                )}
-                {["register", "security"].includes(mode) && (
+                      {mode !== "login" && (
+                        <label>
+                          确认密码
+                          <input
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={10}
+                            maxLength={128}
+                            required
+                            value={confirmation}
+                            onChange={(event) =>
+                              setConfirmation(event.target.value)
+                            }
+                          />
+                        </label>
+                      )}
+                    </>
+                  )}
+                {(mode === "security" ||
+                  (mode === "register" && registrationStep === 2)) && (
                   <QuestionFields
                     questions={questions}
                     onChange={setQuestions}
@@ -463,12 +493,25 @@ export default function AccountPanel() {
                     ? "正在处理…"
                     : {
                         login: "登录",
-                        register: "注册并登录",
+                        register:
+                          registrationStep === 1
+                            ? "下一步 · 设置密保"
+                            : "注册并登录",
                         reset: "重置密码",
                         password: "保存新密码",
                         security: "保存密保问题",
                       }[mode]}
                 </button>
+                {mode === "register" && registrationStep === 2 && (
+                  <button
+                    type="button"
+                    className="text-button registration-back"
+                    disabled={account.busy}
+                    onClick={() => setRegistrationStep(1)}
+                  >
+                    ← 返回账号信息
+                  </button>
+                )}
                 {editing && (
                   <button
                     type="button"

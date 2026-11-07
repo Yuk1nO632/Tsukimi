@@ -484,3 +484,33 @@ class AccountProgressTests(unittest.TestCase):
                 },
             )
             self.assertEqual(response.status_code, 422)
+
+    def test_admin_bootstrap_is_idempotent_and_does_not_overwrite_password(self):
+        from create_admin import create_admin
+
+        client = self.client()
+        store = Database(self.path)
+        first = create_admin(store, "TestAdmin", PASSWORD)
+        again = create_admin(store, "TestAdmin", PASSWORD)
+        self.assertEqual(first["id"], again["id"])
+        self.assertEqual(first["role"], "admin")
+        with self.assertRaises(ValueError):
+            create_admin(store, "TestAdmin", "different-password")
+        response = client.post(
+            "/api/account/login", json={"username": "TestAdmin", "password": PASSWORD}
+        )
+        self.assertEqual(response.json()["user"]["role"], "admin")
+        self.assertFalse(response.json()["user"]["security_configured"])
+
+    def test_public_registration_cannot_choose_admin_role(self):
+        client = self.client()
+        payload = {
+            "username": "regular_user",
+            "password": PASSWORD,
+            "nickname": "普通账号",
+            "questions": QUESTIONS,
+            "role": "admin",
+        }
+        result = client.post("/api/account/register", json=payload)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()["user"]["role"], "user")

@@ -112,6 +112,8 @@ class Database:
         if "security_json" not in columns:
             connection.execute("ALTER TABLE users ADD COLUMN security_json TEXT NOT NULL DEFAULT '[]'")
         connection.execute("UPDATE users SET username = email WHERE username IS NULL")
+        if "role" not in columns:
+            connection.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
         connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username ON users(username)")
         connection.execute("""CREATE TABLE IF NOT EXISTS recovery_challenges (
             token_hash TEXT PRIMARY KEY, session_hash TEXT NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
@@ -120,10 +122,10 @@ class Database:
 
     def user(self, owner_id):
         with self.connect() as connection:
-            row = connection.execute("SELECT id, username, nickname, security_json FROM users WHERE id = ?", (owner_id,)).fetchone()
+            row = connection.execute("SELECT id, username, nickname, security_json, role FROM users WHERE id = ?", (owner_id,)).fetchone()
         if not row:
             return None
-        return {"id": row[0], "username": row[1], "nickname": row[2], "security_configured": bool(json.loads(row[3]))}
+        return {"id": row[0], "username": row[1], "nickname": row[2], "security_configured": bool(json.loads(row[3])), "role": row[4]}
 
     def progress(self, owner_id, anime_id):
         with self.connect() as connection:
