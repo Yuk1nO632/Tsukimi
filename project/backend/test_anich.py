@@ -578,3 +578,35 @@ class AniChTests(unittest.TestCase):
                 'originalTitle': '测试作品!恋', 'aliases': '测试作品 / 测试作品！',
             })
         self.assertEqual(keywords, ['测试作品！恋', '测试作品', '测试作品!恋'])
+
+    def test_json_unauthorized_stops_discovery_even_when_upstream_status_is_500(self):
+        for status in (200, 401, 500):
+            with self.subTest(status=status):
+                keywords = []
+
+                def handle(request):
+                    keywords.append(request.url.params['keyword'])
+                    return httpx.Response(status, json={'error': True, 'message': 'unauthorized', 'body': {}})
+
+                provider = AniChSource(transport=httpx.MockTransport(handle))
+                self.addCleanup(provider.close)
+                with self.assertRaises(SourceError) as raised:
+                    provider.discover({'id': 'bgm-386809', 'title': '【我推的孩子】', 'aliases': 'Oshi no Ko'})
+                self.assertEqual(raised.exception.status_code, 503)
+                self.assertIn('未授权', str(raised.exception))
+                self.assertEqual(keywords, ['【我推的孩子】'])
+
+    def test_non_auth_server_errors_keep_title_fallback(self):
+        keywords = []
+
+        def handle(request):
+            keyword = request.url.params['keyword']
+            keywords.append(keyword)
+            if keyword != '我推的孩子':
+                return httpx.Response(500, json={'error': True, 'message': 'internal error'})
+            return httpx.Response(200, content=field(1, field(1, 32094) + field(2, '【我推的孩子】')))
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        self.assertEqual(provider.search('【我推的孩子】')[0]['id'], 32094)
+        self.assertEqual(keywords, ['【我推的孩子】', '我推的孩子'])

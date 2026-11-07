@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 import hashlib
 import ipaddress
+import json
 import os
 import re
 import time
@@ -66,23 +67,27 @@ class AniChSource:
             with client.stream('GET', self.base + path, params=params) as response:
                 if response.status_code == 404:
                     raise SourceError('AniCh 中的作品或剧集已不可用，请重新匹配。', 404)
+                if response.status_code == 401:
+                    raise SourceError('AniCh 接口返回未授权，暂时无法读取来源。', 503)
                 if response.status_code == 403:
                     raise SourceError('AniCh 暂时拒绝请求，请稍后重试。', 503)
                 if response.status_code == 429:
                     raise SourceError('AniCh 请求较多，请稍后重试。', 503)
-                response.raise_for_status()
                 chunks, size = [], 0
                 for chunk in response.iter_bytes():
                     size += len(chunk)
                     if size > LIMIT:
                         raise ValueError('oversized response')
                     chunks.append(chunk)
-            import json
-            raw = b''.join(chunks)
-            result = json.loads(raw) if json_result else raw
+                raw = b''.join(chunks)
+                is_json = 'application/json' in response.headers.get('content-type', '').lower()
+                result = json.loads(raw) if json_result or is_json else raw
+                if isinstance(result, dict) and str(result.get('message', '')).casefold() in {'unauthorized', 'unauthenticated'}:
+                    raise SourceError('AniCh 接口返回未授权，暂时无法读取来源。', 503)
+                response.raise_for_status()
             if isinstance(result, dict) and result.get('error'):
                 raise SourceError('AniCh 服务暂时拒绝了请求，请稍后重试。', 503)
-            return result
+            return result if json_result else raw
         except httpx.TimeoutException as error:
             raise SourceError('AniCh 响应超时，请稍后重试。', 504) from error
         except (httpx.HTTPError, ValueError, TypeError) as error:
