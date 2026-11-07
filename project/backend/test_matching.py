@@ -1,6 +1,6 @@
 """Provider-independent name, alias and season evidence used by AniCh fallback."""
 import unittest
-from matching import exact_source, special_search_title, fallback_search_title
+from matching import exact_source, special_search_title, fallback_search_title, discovery_queries, season_number, part_number
 
 
 class MatchingTests(unittest.TestCase):
@@ -28,3 +28,27 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(fallback_search_title('Fate/stay night'),'Fate/stay night')
         self.assertEqual(fallback_search_title("BanG Dream! It's MyGO"),"BanG Dream! It's MyGO")
         self.assertEqual(fallback_search_title('伪恋 OAD'),'伪恋')
+
+    def test_long_title_queries_drop_decorations_and_season_for_search_only(self):
+        cases={
+            '无职转生 第三季 ～到了异世界就拿出真本事～':'无职转生',
+            '無職転生Ⅲ ～異世界行ったら本気だす～':'無職転生',
+            '无职转生Ⅱ ～到了异世界就拿出真本事～ 第2部分':'无职转生',
+            '作品名称：一个很长的副标题':'作品名称',
+            '作品名称（第三季）':'作品名称',
+            '测试作品 Season 3':'测试作品',
+        }
+        for title, expected in cases.items():
+            with self.subTest(title=title):
+                self.assertEqual(fallback_search_title(title), expected)
+        queries=discovery_queries({'title':'主标题','originalTitle':'原始标题','aliases':'另一个译名 / 另一个译名 / Useful Alias'})
+        self.assertIn('Useful Alias',queries)
+        self.assertEqual(len(queries),len(set(queries)))
+        self.assertLessEqual(len(queries),6)
+
+    def test_roman_season_and_cour_are_distinct(self):
+        self.assertEqual(season_number('無職転生Ⅲ ～異世界行ったら本気だす～'),3)
+        self.assertEqual(season_number('无职转生Ⅱ 第2部分'),2)
+        self.assertIsNone(season_number('无职转生 第2部分'))
+        self.assertEqual(part_number('无职转生Ⅱ 第2部分'),2)
+        self.assertEqual(part_number('无职转生Ⅱ Part.2'),2)

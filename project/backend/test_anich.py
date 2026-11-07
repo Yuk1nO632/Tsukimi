@@ -197,6 +197,9 @@ class AniChTests(unittest.TestCase):
             if path == '/bangumi/detail/31764':
                 return httpx.Response(200, json={'id': 31764, 'title': '孤独摇滚！', 'titles': ['ぼっち・ざ・ろっく！'],
                     'sites': [{'site': 'bangumi', 'id': '328609'}]})
+            if path == '/bangumi/detail/33380':
+                return httpx.Response(200, json={'id': 33380, 'title': '剧场总集篇 孤独摇滚！ Re:',
+                    'sites': [{'site': 'bangumi', 'id': '400602'}]})
             if path == '/bangumi/episodes/31764':
                 return httpx.Response(200, content=field(1, field(1, 1) + field(2, 1)))
             if path == '/vod/31764/1':
@@ -388,3 +391,96 @@ class AniChTests(unittest.TestCase):
         result=provider.resolve(32339,1)
         self.assertEqual(result['status'],'unavailable')
         self.assertEqual(result['reason'],'unverified_resources')
+
+    def test_series_recall_checks_official_ids_even_when_summary_name_differs(self):
+        keywords = []
+        titles = {2: '无职转生 第二季', 3: '無職転生Ⅲ', 4: '无职转生 特别篇'}
+
+        def handle(request):
+            if request.url.path.endswith('/search'):
+                keyword = request.url.params['keyword']
+                keywords.append(keyword)
+                if keyword != '无职转生':
+                    return httpx.Response(500)
+                rows = b''.join(field(1, field(1, identifier) + field(2, title) + field(4, 14))
+                                for identifier, title in titles.items())
+                return httpx.Response(200, content=rows)
+            identifier = int(request.url.path.split('/')[-1])
+            return httpx.Response(200, json={
+                'id': identifier, 'title': titles[identifier], 'titles': [],
+                'sites': [{'site': 'bangumi', 'id': '501963' if identifier in (2, 3) else '999'}],
+            })
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        anime = {
+            'id': 'bgm-501963', 'title': '无职转生 第三季 ～到了异世界就拿出真本事～',
+            'originalTitle': '無職転生Ⅲ ～異世界行ったら本気だす～', 'year': '2026', 'episodes': 14,
+        }
+        self.assertEqual(provider.discover(anime)[0], 3)
+        self.assertEqual(keywords, ['无职转生 第三季 ～到了异世界就拿出真本事～', '无职转生'])
+
+    def test_conflicting_official_year_and_duplicate_verified_candidates_need_confirmation(self):
+        def handle(request):
+            if request.url.path.endswith('/search'):
+                rows = b''.join(field(1, field(1, identifier) + field(2, '另一译名' + str(identifier)))
+                                for identifier in (1, 2))
+                return httpx.Response(200, content=rows)
+            identifier = int(request.url.path.split('/')[-1])
+            return httpx.Response(200, json={
+                'id': identifier, 'title': '另一译名' + str(identifier),
+                'sites': [{'site': 'bangumi', 'id': '501963'}],
+            })
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        anime = {'id': 'bgm-501963', 'title': '完全不同的显示名称', 'year': '2026', 'episodes': 14}
+        self.assertIsNone(provider.discover(anime)[0])
+        self.assertEqual(len(provider._cache), 3)
+
+        def conflicting(request):
+            response = handle(request)
+            if '/detail/' in request.url.path:
+                return httpx.Response(200, json={**response.json(), 'airdate': 1695996000000})
+            return response
+
+        other = AniChSource(transport=httpx.MockTransport(conflicting))
+        self.addCleanup(other.close)
+        self.assertIsNone(other.discover(anime)[0])
+
+    def test_official_identity_with_conflicting_cour_needs_confirmation(self):
+        def handle(request):
+            if request.url.path.endswith('/search'):
+                return httpx.Response(200, content=field(1, field(1, 9) + field(2, '测试作品Ⅱ 第1部分')))
+            return httpx.Response(200, json={
+                'id': 9, 'title': '测试作品Ⅱ 第1部分',
+                'sites': [{'site': 'bangumi', 'id': '501963'}],
+            })
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        anime = {'id': 'bgm-501963', 'title': '测试作品Ⅱ 第2部分', 'year': '2026', 'episodes': 12}
+        self.assertIsNone(provider.discover(anime)[0])
+
+    def test_later_alias_can_recall_identity_after_unrelated_search_results(self):
+        details = []
+
+        def handle(request):
+            if request.url.path.endswith('/search'):
+                identifiers = [99] if request.url.params['keyword'] == '作品别名' else range(1, 9)
+                rows = b''.join(field(1, field(1, identifier) + field(2, '其他名称' + str(identifier)))
+                                for identifier in identifiers)
+                return httpx.Response(200, content=rows)
+            identifier = int(request.url.path.split('/')[-1])
+            details.append(identifier)
+            return httpx.Response(200, json={
+                'id': identifier, 'title': '其他名称' + str(identifier),
+                'sites': [{'site': 'bangumi', 'id': '501963' if identifier == 99 else '999'}],
+            })
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        anime = {'id': 'bgm-501963', 'title': '测试作品', 'aliases': '作品别名', 'year': '2026', 'episodes': 14}
+        self.assertEqual(provider.discover(anime)[0], 99)
+        self.assertEqual(len(details), 9)
+        self.assertEqual(len(set(details)), 9)

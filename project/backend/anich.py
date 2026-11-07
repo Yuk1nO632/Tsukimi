@@ -1,5 +1,6 @@
 """AniCh aggregate adapter. Metadata/choices cached, signed video URLs never cached."""
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 import hashlib
 import ipaddress
 import os
@@ -11,7 +12,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from anich_protocol import LIMIT, fields, decode_url
-from matching import exact_source, title_key, season_number, special_search_title, fallback_search_title
+from matching import exact_source, title_key, season_number, fallback_search_title, discovery_queries, part_number
 from source_errors import SourceError
 
 
@@ -140,17 +141,21 @@ class AniChSource:
 
     def discover(self, anime):
         candidates = {}
-        queries = list(dict.fromkeys(value.strip()[:80] for value in
-            (anime.get('title', ''), fallback_search_title(anime.get('title', '')),
-             anime.get('originalTitle', '')) if value.strip()))
+        queries = discovery_queries(anime)
         names = {title_key(value) for value in (anime.get('title', ''), anime.get('originalTitle', ''),
             *re.split(r'\s+/\s+', anime.get('aliases', ''))) if value}
-        base_names = {title_key(special_search_title(value)) for value in
-                      (anime.get('title', ''), anime.get('originalTitle', '')) if value}
+        target_season = season_number(anime.get('title', '')) or season_number(anime.get('originalTitle', ''))
+        target_part = part_number(anime.get('title', '')) or part_number(anime.get('originalTitle', ''))
+        target_year = str(anime.get('year') or '')[:4]
+        def relevance(item):
+            name = title_key(item['title'])
+            same_season = season_number(item['title']) == target_season
+            similarity = max((SequenceMatcher(None, name, known).ratio() for known in names), default=0)
+            return (name in names, same_season, similarity)
         checked, verified, fallback = set(), [], []
         search_succeeded = False
         last_error = None
-        for query in queries[:3]:
+        for query in queries:
             try:
                 for item in self.search(query):
                     candidates[item['id']] = item
@@ -160,13 +165,11 @@ class AniChSource:
                     raise
                 last_error = error
                 continue
-            plausible = [item for item in candidates.values()
-                         if title_key(item['title']) in names or
-                         title_key(special_search_title(item['title'])) in base_names]
-            # Fetch at most six details across all queries, including alternate special titles.
-            for item in plausible:
-                if item['id'] in checked or len(checked) >= 6:
-                    continue
+            # Names rank the bounded detail probes. They must not block a valid official ID.
+            plausible = sorted(candidates.values(), key=relevance, reverse=True)
+            unchecked = [item for item in plausible if item['id'] not in checked]
+            # Reserve capacity for later aliases when an earlier query returns unrelated hits.
+            for item in unchecked[:min(8, 12 - len(checked))]:
                 checked.add(item['id'])
                 try:
                     detail = self.detail(item['id'])
@@ -178,7 +181,13 @@ class AniChSource:
                     candidates[item['id']] = item
                 linked = self.mapped_ids(detail)
                 if anime['id'].removeprefix('bgm-') in linked:
-                    verified.append(item['id'])
+                    source_season = season_number(detail['title'])
+                    source_part = part_number(detail['title'])
+                    conflict = ((target_season and source_season and target_season != source_season) or
+                                (target_part and source_part and target_part != source_part) or
+                                (target_year and item['year'] and target_year != item['year']))
+                    if not conflict:
+                        verified.append(item['id'])
                 elif not linked:
                     fallback.append(item)
             if len(verified) == 1:
