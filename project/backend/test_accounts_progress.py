@@ -250,6 +250,95 @@ class AccountProgressTests(unittest.TestCase):
             403,
         )
 
+    def test_progress_list_includes_more_than_thirty_records(self):
+        client = self.client()
+        client.get("/api/account")
+        store = Database(self.path)
+        template = store.cached_anime(ANIME)[0]
+        ids = [f"bgm-{900000 + index}" for index in range(35)]
+        for anime_id in ids:
+            store.cache_anime({**template, "id": anime_id}, int(time.time()))
+        with store.connect() as connection:
+            owner = connection.execute("SELECT owner_id FROM sessions").fetchone()[0]
+            connection.executemany(
+                """INSERT INTO watch_progress
+                (owner_id, anime_id, episode, position, duration, revision, updated_at, operation_id)
+                VALUES (?, ?, 1, 120, 1500, 1, ?, ?)""",
+                [(owner, anime_id, index, secrets.token_hex(16)) for index, anime_id in enumerate(ids)],
+            )
+        items = client.get("/api/progress").json()["items"]
+        self.assertEqual([item["anime_id"] for item in items], list(reversed(ids)))
+
+    def test_delete_progress_persists_and_preserves_collection(self):
+        first = self.client()
+        self.register(first)
+        second = self.client()
+        second.post("/api/account/login", json={"username": "first_user", "password": PASSWORD})
+        first.put(f"/api/collection/{ANIME}", json={"status": "watching"})
+        first.put(f"/api/progress/{ANIME}", json=self.payload(first, episode=2))
+        deletion = self.payload(first, revision=1)
+        for _ in range(2):
+            response = first.request("DELETE", f"/api/progress/{ANIME}", json=deletion)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["item"]["revision"], 2)
+        for client in (first, second, self.client()):
+            if client not in (first, second):
+                client.cookies.update(dict(first.cookies))
+            self.assertEqual(client.get("/api/progress").json()["items"], [])
+            item = client.get(f"/api/progress/{ANIME}").json()["item"]
+            self.assertEqual((item["episode"], item["position"], item["duration"]), (1, 0, 0))
+            self.assertIsNone(item["source_id"])
+            self.assertEqual(client.get("/api/collection").json()["items"][0]["status"], "watching")
+
+    def test_deleted_progress_rejects_stale_player_and_can_restart(self):
+        client = self.client()
+        old = self.payload(client)
+        client.put(f"/api/progress/{ANIME}", json=old)
+        stale = self.payload(client, revision=1, position=360)
+        deletion = self.payload(client, revision=1)
+        client.request("DELETE", f"/api/progress/{ANIME}", json=deletion)
+        for payload in (old, stale):
+            self.assertEqual(client.put(f"/api/progress/{ANIME}", json=payload).status_code, 409)
+        self.assertEqual(client.get("/api/progress").json()["items"], [])
+        revision = client.get(f"/api/progress/{ANIME}").json()["item"]["revision"]
+        response = client.put(f"/api/progress/{ANIME}", json=self.payload(client, revision, position=10))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(client.get("/api/progress").json()["items"][0]["position"], 10)
+        self.assertEqual(client.request("DELETE", f"/api/progress/{ANIME}", json=deletion).status_code, 409)
+
+    def test_delete_progress_checks_scope_revision_origin_and_owner(self):
+        first = self.client()
+        first.put(f"/api/progress/{ANIME}", json=self.payload(first))
+        deletion = self.payload(first, revision=1)
+        for payload, headers, expected in (
+            ({**deletion, "scope": "0" * 64}, {}, 409),
+            ({**deletion, "revision": 0}, {}, 409),
+            (deletion, {"Origin": "https://evil.example"}, 403),
+        ):
+            response = first.request("DELETE", f"/api/progress/{ANIME}", json=payload, headers=headers)
+            self.assertEqual(response.status_code, expected)
+        second = self.client()
+        other = self.payload(second)
+        self.assertEqual(second.request("DELETE", f"/api/progress/{ANIME}", json=other).status_code, 200)
+        self.assertEqual(first.get(f"/api/progress/{ANIME}").json()["item"]["position"], 120)
+        unsigned = self.client()
+        self.assertEqual(unsigned.request("DELETE", f"/api/progress/{ANIME}", json=deletion).status_code, 401)
+
+    def test_delete_and_save_compete_for_same_revision(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        first = self.client()
+        first.put(f"/api/progress/{ANIME}", json=self.payload(first))
+        second = self.client()
+        second.cookies.update(dict(first.cookies))
+        change = self.payload(first, revision=1, position=300)
+        deletion = self.payload(second, revision=1)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            save = pool.submit(first.put, f"/api/progress/{ANIME}", json=change)
+            remove = pool.submit(second.request, "DELETE", f"/api/progress/{ANIME}", json=deletion)
+            self.assertEqual(sorted([save.result().status_code, remove.result().status_code]), [200, 409])
+        self.assertEqual(first.get(f"/api/progress/{ANIME}").json()["item"]["revision"], 2)
+
     def test_progress_and_account_survive_restart(self):
         client = self.client()
         self.register(client)

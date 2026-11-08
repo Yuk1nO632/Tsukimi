@@ -20,6 +20,12 @@ class ProgressInput(BaseModel):
     scope: str = Field(min_length=64, max_length=64)
 
 
+class ProgressDeleteInput(BaseModel):
+    revision: int = Field(ge=0)
+    operation_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{16,80}$")
+    scope: str = Field(min_length=64, max_length=64)
+
+
 def create_progress_router(store, sessions, scope):
     router = APIRouter(prefix="/api/progress")
 
@@ -76,6 +82,37 @@ def create_progress_router(store, sessions, scope):
                     payload.operation_id,
                     payload.source_provider,
                 ),
+            )
+            return {"item": store.progress_row(connection, owner, anime_id)}
+
+    @router.delete("/{anime_id}")
+    def delete_progress(anime_id: str, payload: ProgressDeleteInput, request: Request):
+        owner = sessions.require(request)
+        if payload.scope != scope(request):
+            raise HTTPException(409, "登录身份已变化，请重新读取观看进度。")
+        with store.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if sessions.current(request) != owner:
+                raise HTTPException(401, "会话已失效，请重新登录。")
+            current = store.progress_row(connection, owner, anime_id)
+            if current and current["operation_id"] == payload.operation_id:
+                return {"item": current}
+            revision = current["revision"] if current else 0
+            if revision != payload.revision:
+                return JSONResponse(
+                    status_code=409,
+                    content={"detail": "观看记录已变化，请刷新后再删除。", "item": current},
+                )
+            if current is None:
+                return {"item": None}
+            # Saves require a positive duration. Keep a zero-duration marker and
+            # advance its revision so an old player cannot recreate deleted progress.
+            connection.execute(
+                """UPDATE watch_progress SET
+                episode=1, position=0, duration=0, source_id=NULL, line_id=NULL,
+                source_provider='anich', completed=0, revision=?, updated_at=?, operation_id=?
+                WHERE owner_id=? AND anime_id=?""",
+                (revision + 1, time.time_ns() // 1000000, payload.operation_id, owner, anime_id),
             )
             return {"item": store.progress_row(connection, owner, anime_id)}
 

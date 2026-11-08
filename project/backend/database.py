@@ -156,8 +156,9 @@ class Database:
     def list_progress(self, owner_id):
         with self.connect() as connection:
             rows = connection.execute("""SELECT p.anime_id, c.data FROM watch_progress p
-                JOIN catalog_cache c ON c.anime_id = p.anime_id WHERE p.owner_id = ?
-                ORDER BY p.updated_at DESC LIMIT 30""", (owner_id,)).fetchall()
+                JOIN catalog_cache c ON c.anime_id = p.anime_id
+                WHERE p.owner_id = ? AND p.duration > 0
+                ORDER BY p.updated_at DESC, p.anime_id""", (owner_id,)).fetchall()
             return [{**self.progress_row(connection, owner_id, anime_id), "anime": json.loads(data)} for anime_id, data in rows]
 
     def session_owner(self, token_hash):

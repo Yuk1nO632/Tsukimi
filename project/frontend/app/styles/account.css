@@ -205,6 +205,7 @@
 }
 .continue-section {
   margin: 32px 0;
+  scroll-margin-top: 100px;
 }
 .continue-grid {
   display: grid;
@@ -212,9 +213,7 @@
   gap: 16px;
 }
 .continue-card {
-  display: flex;
-  gap: 17px;
-  padding: 16px;
+  position: relative;
   background: white;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -223,6 +222,31 @@
 .continue-card:hover {
   border-color: #e9b5c8;
   box-shadow: var(--shadow-sm);
+}
+.continue-card-link {
+  display: flex;
+  gap: 17px;
+  padding: 16px;
+  min-width: 0;
+}
+.continue-remove {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  padding: 3px 0 3px 8px;
+  border: 0;
+  background: white;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.continue-remove:hover,
+.continue-remove:focus-visible {
+  color: var(--pink);
+}
+.continue-remove:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 .continue-cover {
   position: relative;
@@ -294,6 +318,9 @@
   }
 }
 @media (max-width: 540px) {
+  .continue-section {
+    scroll-margin-top: 128px;
+  }
   .header-inner {
     gap: 12px;
   }

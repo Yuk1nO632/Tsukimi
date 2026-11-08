@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { requestJson } from "../lib/api";
 import { useAccount } from "./account-provider";
@@ -17,18 +17,24 @@ export function progressUrl(item) {
   return `/watch/${item.anime_id || item.anime.id}?${query}`;
 }
 
-export default function ContinueWatching({ animeId }) {
+export default function ContinueWatching({ animeId, manage = false }) {
   const account = useAccount();
   const pathname = usePathname();
-  const [items, setItems] = useState([]);
+  const [records, setRecords] = useState({ scope: null, items: [] });
+  const [expanded, setExpanded] = useState(false);
+  const [removing, setRemoving] = useState(null);
+  const [removeError, setRemoveError] = useState("");
+  const readVersion = useRef(0);
+  const activeScope = useRef(account.scope);
+  activeScope.current = account.scope;
+  const items = records.scope === account.scope ? records.items : [];
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
   useEffect(() => {
     if (!account.ready) return;
     const controller = new AbortController();
-    let readVersion = 0;
     async function read() {
-      const version = ++readVersion;
+      const version = ++readVersion.current;
       try {
         const data = await requestJson(
           animeId
@@ -38,14 +44,18 @@ export default function ContinueWatching({ animeId }) {
             signal: controller.signal,
           },
         );
-        if (controller.signal.aborted || version !== readVersion) return;
-        setItems(data.items || (data.item ? [data.item] : []));
+        if (controller.signal.aborted || version !== readVersion.current) return;
+        setRecords({
+          scope: account.scope,
+          items: data.items || (data.item ? [data.item] : []),
+        });
         setError("");
       } catch (failure) {
-        if (!controller.signal.aborted && version === readVersion)
+        if (!controller.signal.aborted && version === readVersion.current)
           setError(failure.message);
       }
     }
+    setRemoveError("");
     void read();
     const refresh = () => {
       if (document.visibilityState === "visible") void read();
@@ -60,14 +70,64 @@ export default function ContinueWatching({ animeId }) {
       window.removeEventListener("tsukimi-progress-refresh", refresh);
     };
   }, [account.scope, account.ready, pathname, version, animeId]);
-  const visible = items
-    .filter(
-      (item) =>
-        !item.completed &&
-        item.position > 0 &&
-        (!animeId || (item.anime?.id || item.anime_id) === animeId),
+  useEffect(() => {
+    if (!manage) return;
+    const expandHistory = () => {
+      if (window.location.hash === "#continue-watching") setExpanded(true);
+    };
+    expandHistory();
+    window.addEventListener("hashchange", expandHistory);
+    return () => window.removeEventListener("hashchange", expandHistory);
+  }, [manage, pathname]);
+  async function remove(item) {
+    if (
+      removing ||
+      !window.confirm(`删除《${item.anime.title}》的观看记录？下次播放将从头开始。`)
     )
-    .slice(0, animeId ? 1 : 6);
+      return;
+    const scope = account.scope;
+    setRemoving(item.anime_id);
+    setRemoveError("");
+    try {
+      await requestJson(`/api/progress/${encodeURIComponent(item.anime_id)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "X-Tsukimi-Scope": scope },
+        body: JSON.stringify({
+          revision: item.revision,
+          operation_id: crypto.randomUUID(),
+          scope,
+        }),
+      });
+      if (activeScope.current !== scope) return;
+      ++readVersion.current;
+      setRecords((previous) => ({
+        ...previous,
+        items: previous.items.filter((record) => record.anime_id !== item.anime_id),
+      }));
+      try {
+        sessionStorage.removeItem(`tsukimi:progress:${scope}:${item.anime_id}`);
+      } catch {}
+      window.dispatchEvent(new Event("tsukimi-progress-refresh"));
+    } catch (failure) {
+      if (activeScope.current === scope) {
+        setRemoveError(failure.message);
+        if (failure.status === 409)
+          window.dispatchEvent(new Event("tsukimi-progress-refresh"));
+      }
+    } finally {
+      setRemoving(null);
+    }
+  }
+  const available = items.filter(
+    (item) =>
+      !item.completed &&
+      item.position > 0 &&
+      (!animeId || (item.anime?.id || item.anime_id) === animeId),
+  );
+  const visible = available.slice(
+    0,
+    animeId ? 1 : manage && expanded ? available.length : 6,
+  );
   if (error)
     return (
       <p className="progress-read-error" role="status">
@@ -93,7 +153,7 @@ export default function ContinueWatching({ animeId }) {
       </Link>
     );
   return (
-    <section className="continue-section" aria-label="继续观看">
+    <section id="continue-watching" className="continue-section" aria-label="继续观看">
       <div className="portal-section-heading">
         <div>
           <h2>继续观看</h2>
@@ -101,35 +161,62 @@ export default function ContinueWatching({ animeId }) {
             {account.user ? "已同步的观看记录" : "当前浏览器的观看记录"}
           </span>
         </div>
-        <Link href="/collection">我的追番 →</Link>
+        {manage && available.length > 6 && (
+          <button
+            className="text-button"
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "收起记录" : `查看全部（${available.length}）`}
+          </button>
+        )}
+        {!manage && (
+          <Link href="/collection#continue-watching">
+            查看全部（{available.length}） →
+          </Link>
+        )}
       </div>
+      {removeError && (
+        <p className="progress-read-error" role="alert">{removeError}</p>
+      )}
       <div className="continue-grid">
         {visible.map((item) => (
-          <Link
-            prefetch={false}
-            className="continue-card"
-            href={progressUrl(item)}
-            key={item.anime.id}
-          >
-            <span className="continue-cover">
-              <Image src={item.anime.cover} alt="" fill sizes="72px" />
-            </span>
-            <span className="continue-copy">
-              <strong>{item.anime.title}</strong>
-              <span>
-                第 {item.episode} 集 · {Math.floor(item.position / 60)} 分{" "}
-                {Math.floor(item.position % 60)} 秒
+          <article className="continue-card" key={item.anime.id}>
+            <Link
+              prefetch={false}
+              className="continue-card-link"
+              href={progressUrl(item)}
+            >
+              <span className="continue-cover">
+                <Image src={item.anime.cover} alt="" fill sizes="72px" />
               </span>
-              <span className="continue-track">
-                <i
-                  style={{
-                    width: `${Math.min(100, (item.position / item.duration) * 100)}%`,
-                  }}
-                />
+              <span className="continue-copy">
+                <strong>{item.anime.title}</strong>
+                <span>
+                  第 {item.episode} 集 · {Math.floor(item.position / 60)} 分{" "}
+                  {Math.floor(item.position % 60)} 秒
+                </span>
+                <span className="continue-track">
+                  <i
+                    style={{
+                      width: `${Math.min(100, (item.position / item.duration) * 100)}%`,
+                    }}
+                  />
+                </span>
+                <small>继续播放 →</small>
               </span>
-              <small>继续播放 →</small>
-            </span>
-          </Link>
+            </Link>
+            <button
+              className="continue-remove"
+              type="button"
+              aria-label={`删除《${item.anime.title}》的观看记录`}
+              disabled={removing !== null || account.busy}
+              onClick={() => void remove(item)}
+            >
+              {removing === item.anime_id ? "删除中…" : "删除记录"}
+            </button>
+          </article>
         ))}
       </div>
     </section>
