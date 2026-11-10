@@ -1,132 +1,197 @@
 # Tsukimi
 
-番剧资料、放送日历、账号片单与跨设备续播。
+一个基于 Next.js、FastAPI 和 SQLite 的追番 Web 应用，集番剧发现、资料检索、片单管理、在线播放和跨设备续播于一体。
 
-一个在全栈课程复习中持续迭代的个人追番 Web 项目。正式应用和复习实验分开，整个工作区由同一个 Git 仓库管理。
+番剧资料与放送计划来自 Bangumi，播放来源接入 AniCh 和稀饭动漫。项目在全栈学习过程中持续迭代，正式应用、学习实验和复习文档分别保存在独立目录。
 
-## 启动正式项目
+## 功能概览
 
-用 VS Code 打开整个 Tsukimi，打开两个终端。当前机器依赖已经安装，无需每次重新安装。VS Code 终端已自动激活 .venv 时，可以省略激活命令。
+| 模块 | 当前功能 |
+| --- | --- |
+| 发现番剧 | 当季轮播、新热视频推荐、人气与高分分区 |
+| 资料检索 | 番名、原名及别名搜索，搜索联想，年份、季度、类型筛选与排序 |
+| 番剧详情 | 简介、评分、制作资料、选集和来源匹配 |
+| 放送日历 | 按星期查看当前放送安排 |
+| 我的追番 | 想看、在看、看完，片单搜索与排序 |
+| 视频播放 | MP4 / HLS，暂停、拖动、音量、倍速、选集、换线、宽屏、全屏和键盘控制 |
+| 继续观看 | 自动保存进度、恢复播放位置、展开全部记录、删除单条记录 |
+| 账号同步 | 用户名密码注册登录、三个密保问题找回、修改密码、匿名记录确认导入、跨设备片单与进度同步 |
 
-终端 1：启动后端。
+首页推荐视频进入视口后静音自动播放。正式播放页尝试有声自动播放，浏览器的自动播放策略可能要求一次点击。播放来源支持自动匹配、人工校正与优先级选择，匹配和线路可用性取决于上游返回结果。
 
-```powershell
-cd C:\Users\lx\Desktop\Tsukimi\project\backend
-.\.venv\Scripts\Activate.ps1
-python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+邮箱绑定、自动播放下一集、弹幕和管理后台列入后续规划。管理员账号角色与单账号迁移工具已实现。
+
+## 技术结构
+
+| 部分 | 技术 |
+| --- | --- |
+| 页面与交互 | Next.js App Router、React、CSS |
+| 视频播放 | HTML video、hls.js |
+| 后端接口 | FastAPI、Uvicorn、HTTPX |
+| 数据与账号 | SQLite、Cookie 会话、Argon2 哈希 |
+| 生产部署 | Ubuntu、systemd、Nginx、HTTPS |
+
+```text
+浏览器
+  ├─ 页面与交互 → Next.js
+  ├─ /api 请求 → FastAPI → SQLite
+  │                         └─ 账号、会话、片单、观看进度和资料缓存
+  └─ 视频媒体请求 → 来源 CDN
+
+FastAPI → Bangumi 获取资料
+FastAPI → AniCh / 稀饭解析播放来源
 ```
 
-终端 2：启动前端。
+本地开发通过 Next.js 将 `/api` 转发到 FastAPI。生产部署由 Nginx 统一接收页面与 API 请求，前后端在服务器内分别运行。播放器取得临时地址后，由浏览器连接视频 CDN。
+
+## 快速开始
+
+### 环境准备
+
+本项目已使用 Python 3.12、Node.js 24 和 npm 验证运行，前端声明的最低 Node.js 版本为 20.9。准备 Git，并确保终端能执行 Python、Node.js 和 npm。Ubuntu 创建后端虚拟环境需要安装 `python3-venv`。
+
+克隆仓库。
+
+```bash
+git clone https://github.com/Yuk1nO632/Tsukimi.git
+cd Tsukimi
+```
+
+使用 VS Code 打开仓库，启动两个终端。下面两个终端均从仓库根目录开始执行，选择对应系统的命令。
+
+### Windows PowerShell
+
+终端 1 安装并启动后端。
 
 ```powershell
-cd C:\Users\lx\Desktop\Tsukimi\project\frontend
+cd project/backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+终端 2 安装并启动前端。
+
+```powershell
+cd project/frontend
+npm.cmd ci
 npm.cmd run dev
 ```
 
-打开 http://127.0.0.1:3000。后端接口文档：http://127.0.0.1:8000/docs。停止服务时，在对应终端按 Ctrl+C。若旧的前端服务还开着，先停止再启动，以加载 API 转发配置。
+### Linux / Ubuntu
 
-新环境安装：前端运行 npm.cmd ci；后端运行 python -m venv .venv，再运行 .\.venv\Scripts\python.exe -m pip install -r requirements.txt。测试依赖见 requirements-dev.txt。
+终端 1 安装并启动后端。
 
-## 当前已实现
+```bash
+cd project/backend
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
 
-- 参考 B 站频道结构的暖白与玫瑰粉界面，首页使用深色真实海报轮播；首页自动读取当季资料，加入本季人气榜、类型快捷入口、高分发现、片单统计，保留经典精选与放送安排。
-- 联网搜索番名、原名和别名，按年份/季度/类型筛选，支持排序与分页；完整详情、当前放送日历、独立追番页和手机布局。
-- 首页新热推荐：大视频搭配评分、简介、收藏和最多八部推荐切换；视频框进入视口后静音自动播放第 1 集，离屏停止媒体加载，复用双来源播放接口。
-- AniCh 与稀饭双来源播放：真实 video、暂停、进度拖动、音量、倍速、宽屏、全屏，支持 MP4 和 HLS 线路。
-- 来源自动匹配、一次确认后按账号或匿名会话记忆、切集、换线和加载失败重试；另有标注清楚的本地测试短片。
-- FastAPI 片单接口与 SQLite，管理想看/在看/看完，刷新和后端重启后仍保留；旧收藏自动迁移为想看。
-- 用户名密码直接注册、三个自定义密保问题找回、修改密码及密保，支持匿名片单与进度确认导入账号，账号数据可跨浏览器读取。
-- 观看进度约每 10 秒及暂停、拖动、切集时保存，首页、追番页和详情支持继续观看，两端写入有版本冲突提示，失败可重试。
-- 密保答案使用 Argon2 哈希保存，恢复凭证包含有效期、尝试次数和浏览器会话绑定，登录与重置有持久化限流。
+终端 2 安装并启动前端。
 
-片单、账号及进度保存在 project/backend/data/tsukimi.db。设备 Cookie 会话有效期为建立起 30 天。匿名记录按浏览器区分，登录同一账号可恢复片单和观看进度。旧数据库升级前自动生成同目录的 tsukimi.pre-accounts.db。
+```bash
+cd project/frontend
+npm ci
+npm run dev
+```
 
-账号页可直接注册并设置三个密保问题。已有邮箱账号使用原邮箱作为账号名登录，再补设密保问题。绑定邮箱安排在部署上线之后，复习见 [观看进度与账号密保](docs/08-观看进度与邮箱账号.md)。
+### 打开应用
 
-顶部搜索已接入 Bangumi 联网资料，输入可显示带海报的联想，点击直达详情；剧集在播放页自动匹配来源，不限本地九部。放送日历展示当前在播安排，实际资源更新以播放来源为准；评分与热度属于资料站。当前已实测 AniCh 芙莉莲第一、二集、MP4/HLS 与换线，以及《伪恋》第一、二集；稀饭已重新接入，作为 AniCh 失败时的备用来源，也可在播放页设置来源优先级。作品与线路编号、手动来源记忆和续播进度均带来源标识。观看进度和账号续播已接入。自动播放下一集与弹幕列入后续扩展。
+- [前端页面](http://127.0.0.1:3000)
+- [后端接口文档](http://127.0.0.1:8000/docs)
+- [后端健康检查](http://127.0.0.1:8000/api/health)，正常返回 `{"status":"ok"}`
 
-## 更新资料与执行检查
+首次启动后端会自动建表并载入本地精选资料。搜索、日历、完整资料获取和来源解析会访问外部服务。
 
-在 project/frontend 运行 npm.cmd run sync:catalog，资料写入 project/catalog/catalog.json，封面保存到 frontend/public/covers。更新后重启后端以重新读取片单；本地精选仍通过该脚本维护；当前首页的新番分区和轮播改由联网查询，不依赖手工更新推荐 ID。
+日常启动时，在上述对应目录执行 Uvicorn 与 `npm run dev` 即可。安装环境和依赖发生变化时，再执行相应安装命令。停止本地服务可在其终端按 `Ctrl + C`。
 
-前端构建：在 frontend 中运行 npm.cmd run build。
+## 配置与数据保存
 
-后端测试：在 backend 中先运行 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt，再运行 .\.venv\Scripts\python.exe -m unittest -v。测试使用临时数据库，不修改个人收藏。
+后端启动时读取 `project/backend/.env`，默认配置适用于上面的本地开发方式。可参考 [配置示例](project/backend/.env.example)。
 
-## 工作区结构
+| 配置项 | 默认行为或用途 |
+| --- | --- |
+| `TSUKIMI_DATABASE` | 默认保存到 `project/backend/data/tsukimi.db`，可指定其他路径 |
+| `TSUKIMI_ALLOWED_ORIGINS` | 逗号分隔的允许来源，默认包含本机 3000 与 8000 地址 |
+| `TSUKIMI_COOKIE_SECURE` | 本地 HTTP 默认为 `0`，HTTPS 部署设置为 `1` |
+| `TSUKIMI_API_ORIGIN` | 前端 `/api` 转发的后端地址，默认 `http://127.0.0.1:8000` |
+
+前三项由后端读取，最后一项配置在前端进程环境中。前端转发配置发生变化后，开发服务重启，正式部署重新构建并启动。
+
+SQLite 保存账号、会话、片单、观看进度、个人来源选择与资料缓存。匿名记录归属当前浏览器会话，登录同一账号可在多设备读取账号记录。首次登录时，页面提供匿名记录的导入选择。
+
+每部番剧保留最近观看的一集及位置。删除继续观看记录会清空续播位置，追番状态单独保留。不同设备同时修改进度时，通过版本检查提示冲突。
+
+`.env`、数据库、虚拟环境、依赖目录与构建产物由各运行环境管理。数据库备份和账号迁移步骤见 [部署指南](docs/10-部署与管理员迁移.md)。
+
+## 构建、预览与检查
+
+### 正式构建与本地预览
+
+在前端目录运行，后端保持启动。
+
+```bash
+npm run build
+npm run start
+```
+
+默认在 `127.0.0.1:3000` 提供正式构建。Windows PowerShell 可将命令中的 `npm` 写成 `npm.cmd`。
+
+也可以先停止占用 3000 端口的前端，再运行 `npm run preview`。该命令自动构建并启动，使用独立的 `.next-preview` 目录。修改代码后重新运行，以生成最新预览。
+
+生产环境的服务管理、域名、HTTPS、备份与更新流程见 [部署上线与日常维护](docs/10-部署与管理员迁移.md)。
+
+### 后端测试
+
+在后端目录执行。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m unittest -v
+```
+
+Linux 使用 `.venv/bin/python` 替换命令中的 Windows Python 路径。测试使用临时数据库与模拟上游验证数据保存、账号隔离、来源匹配、删除和并发写入等行为。
+
+### 前端测试
+
+在前端目录执行。
+
+```bash
+node --test tests/*.test.mjs
+```
+
+测试覆盖推荐筛选、线路响应检测、来源参数与进度重试处理。最近一次功能验收通过 105 项后端测试、12 项前端测试和正式构建，过程见 [核心流程联测](docs/09-上线前核心流程联测.md) 及 [观看进度指南](docs/08-观看进度与邮箱账号.md)。
+
+## 仓库结构
 
 ```text
 Tsukimi/
-  .git/                 统一 Git 仓库
-  docs/                 计划、阶段指南和学习记录
-  experiments/          原生页面与 React 复习实验
-  project/
-    frontend/           Next.js 前端
-    backend/            FastAPI 接口与 SQLite 存储
-    catalog/            前后端共用的本地番剧资料
+├─ project/
+│  ├─ frontend/       页面、组件、播放器与前端资源
+│  ├─ backend/        API、账号、数据库与来源适配
+│  └─ catalog/        本地精选番剧资料
+├─ experiments/      原生页面与 React 学习实验
+├─ docs/             复习指南、计划和验证记录
+└─ README.md         项目介绍与运行入口
 ```
 
-数据库、虚拟环境、node_modules、缓存与测试截图不提交 Git。正式功能持续在 project 内迭代，每个验证通过的阶段保存 Git 版本。
+- [正式应用结构](project/README.md)
+- [后端模块、接口与配置](project/backend/README.md)
 
-## 阅读入口
+## 文档导航
 
-- [部署上线、管理员迁移与日常更新复习](docs/10-部署与管理员迁移.md)
-- [上线前核心流程联测](docs/09-上线前核心流程联测.md)
+| 想了解什么 | 阅读入口 |
+| --- | --- |
+| 部署与更新线上版本 | [部署、管理员迁移与日常更新](docs/10-部署与管理员迁移.md) |
+| 完整业务流程怎样验收 | [上线前核心流程联测](docs/09-上线前核心流程联测.md) |
+| 账号与观看记录怎样保存 | [观看进度与账号密保](docs/08-观看进度与邮箱账号.md) |
+| 搜索、片单和双来源怎样配合 | [联网资料与追番片单](docs/07-联网资料与追番片单.md) |
+| 播放器的早期实现 | [真实播放器与稀饭来源](docs/06-真实播放器与稀饭来源.md) |
+| 从页面到数据库的入门闭环 | [收藏接口、Cookie 与 SQLite](docs/05-收藏接口与数据库.md) |
+| 学习实验 | [浏览器与页面状态](docs/01-浏览器与页面状态.md)、[React 组件与状态](docs/02-React组件与状态.md) |
+| 项目推进与开发过程 | [复习与项目计划](docs/复习与项目计划.md)、[学习记录](docs/学习记录.md)、[Git 使用约定](docs/Git使用约定.md) |
+| 素材与来源说明 | [素材说明](docs/素材说明.md)、[AniCh 接口验证](docs/Anich聚合接口可行性验证.md) |
 
-- [待复习的观看进度与账号密保](docs/08-观看进度与邮箱账号.md)
-- [待复习：联网资料与追番片单](docs/07-联网资料与追番片单.md)
-- [AniCh 聚合接口验证与适配记录](docs/Anich聚合接口可行性验证.md)
-- [真实播放器与稀饭来源](docs/06-真实播放器与稀饭来源.md)
-- [收藏接口、Cookie 与 SQLite](docs/05-收藏接口与数据库.md)
-- [频道 UI、播放页与真实资料](docs/04-番剧频道与真实资料.md)
-- [素材来源](docs/素材说明.md)
-- [Git 使用约定](docs/Git使用约定.md)
-- [复习与项目计划](docs/复习与项目计划.md)
-- [学习记录](docs/学习记录.md)
-
-## 保留的复习实验
-
-实验 01：根目录运行 python -m http.server 5173 --bind 127.0.0.1 --directory experiments/01-browser-basics，访问 http://127.0.0.1:5173；start.ps1 也仍用于这个实验。
-
-实验 02：进入 experiments/02-react-state 运行 npm.cmd run dev，访问 http://127.0.0.1:5174。
-
-- [实验 01 指南](docs/01-浏览器与页面状态.md)
-- [实验 02 指南](docs/02-React组件与状态.md)
-
-线路响应：播放页展开“线路响应”，点击“检测线路”查看首包耗时，可按耗时排序或点击结果换线；不显示文件大小。不可测不等于不能播放。前端检测测试：在 frontend 执行 node --test tests/*.test.mjs（包含线路检测与首页高分筛选）。
-
-
-## 日常试用的生产预览
-
-后端保持运行。前端终端先按 Ctrl+C 停止 dev，再运行：
-
-```powershell
-cd C:\Users\lx\Desktop\Tsukimi\project\frontend
-npm.cmd run preview
-```
-
-预览仍在 http://127.0.0.1:3000，使用独立 .next-preview 构建目录，不覆盖开发构建。首次运行会先构建；之后按 Ctrl+C 停止。修改代码后需重新运行 preview；边改边看的学习场景继续用 npm.cmd run dev。脚本发现 3000 被占用会直接提示，不关闭已有服务。
-
-当前后端 105 项测试、前端 12 项测试通过（线路检测 5 项、首页高分筛选 3 项、双来源请求 2 项、进度冲突 2 项）。页面加载排查与说明见指南 07 H。
-
-
-## 本机管理员账号
-
-账号页提供管理员角色标识。当前角色用于身份区分，具体管理功能在后续阶段实现。公开注册产生普通账号。
-
-本机管理员通过后端目录的命令创建，密码在终端交互输入。已有同名账号时会校验密码，密码不符则停止并保留原账号。创建前备份数据库。
-
-```powershell
-.\.venv\Scripts\python.exe create_admin.py --username 你的账号名
-```
-
-登录后自行设置三个密保问题。用户名按既有规则统一为小写，登录输入大小写均可。
-
-
-特别篇匹配支持完整标题搜索失败时使用系列名检索，并核对 AniCh 的 Bangumi ID；独立 OAD/OVA 的 type 0 剧集可进入播放解析。作品目录存在与视频线路可用分别展示。2026-11-07 实测《伪恋 OAD》对应 AniCh 24945，四集 VOD 均返回空候选，页面显示已匹配但暂无播放资源；TV 本篇第二集可返回候选线路。
-
-
-中日文标题搭配英文副标题的搜索错误可使用系列关键词回退，作品身份仍按完整标题、别名和 Bangumi ID 校验。独立单集作品支持视频端以 0 编号的正片，限定来源目录及总集数均为单集，并核对正片标签和完整标题。2026-11-07 实测《路人女主的养成方法 Fine》自动匹配 AniCh 15261，返回 14 条可选线路，默认线路在浏览器以 1080P 播放到 33 秒；其余线路未逐一验收。
-
-
-单账号迁移工具见 project/backend/transfer_admin.py，支持导出一个管理员并导入已经初始化的空数据库，包含密码哈希和已设置的密保资料。迁移文件存放在已忽略的 .cache 目录，操作步骤见指南 10。
+阶段指南保留对应时期的实操和验证记录。当前启动方式以本 README 为入口，具体实现可沿文档中的模块路径继续阅读。

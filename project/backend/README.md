@@ -1,89 +1,108 @@
 # Tsukimi 后端
 
-## 文件职责
+基于 FastAPI 和 SQLite，提供番剧资料、账号、片单、观看进度以及 AniCh / 稀饭双来源播放接口。完整项目安装与前端启动见 [仓库 README](../../README.md)。
 
-- main.py：HTTP 路由、匿名 Cookie、会话查找、番剧 ID 校验。
-- database.py：SQLite 建表与参数化查询，每次操作关闭连接。
-- test_favorites.py：用临时数据库验证持久化、隔离、重复请求和错误响应。
-- data/tsukimi.db：个人运行数据，第一次启动时创建，Git 忽略。
+## 本地启动
 
-## 安装与启动（PowerShell）
+以下命令在 `project/backend` 目录的 Windows PowerShell 中执行。
 
 ```powershell
-cd C:\Users\lx\Desktop\Tsukimi\project\backend
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-当前机器已安装依赖，平时只运行最后一条。直接指定虚拟环境里的 Python，无需执行 Activate.ps1。
+Linux / Ubuntu 对应命令如下。
 
-接口文档：http://127.0.0.1:8000/docs。
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
 
-## 接口
+依赖安装完成后，日常启动执行对应的 Uvicorn 命令即可。首次启动会初始化数据库并载入本地精选资料。
 
-| 方法 | 地址 | 作用 |
+- [交互式接口文档](http://127.0.0.1:8000/docs)
+- [健康检查](http://127.0.0.1:8000/api/health)
+
+## 模块职责
+
+| 文件 | 职责 |
+| --- | --- |
+| `main.py` | 创建应用、读取配置、注册路由和处理请求来源 |
+| `database.py` | SQLite 建表、兼容迁移与数据查询 |
+| `sessions.py` | 浏览器 Cookie、会话有效期与数据归属 |
+| `accounts.py` | 注册登录、密码与密保、匿名记录导入 |
+| `progress.py` | 观看进度读取、保存、删除与版本冲突处理 |
+| `catalog.py` | Bangumi 资料搜索、详情、日历与缓存 |
+| `playback.py` | 来源搜索、手动关联、来源优先级与逐集解析 |
+| `anich.py`、`anich_protocol.py` | AniCh 适配、候选校验和协议解析 |
+| `xifan.py` | 稀饭备用来源适配 |
+| `create_admin.py`、`transfer_admin.py` | 管理员创建与单账号迁移工具 |
+
+## 接口概览
+
+| 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| GET | /api/health | 检查进程可访问 |
-| GET | /api/favorites | 建立或读取匿名会话，返回收藏 ID |
-| PUT | /api/favorites/{anime_id} | 收藏，重复调用不会重复添加 |
-| DELETE | /api/favorites/{anime_id} | 取消收藏，重复调用结果一致 |
+| GET | `/api/health` | 检查后端响应 |
+| GET | `/api/catalog` | 搜索、筛选、排序和分页 |
+| GET | `/api/catalog/calendar` | 获取当前放送计划 |
+| GET | `/api/catalog/{anime_id}` | 获取详情，`summary=true` 可读取已有摘要 |
+| GET | `/api/account` | 读取账号状态、建立匿名会话并返回 scope |
+| POST | `/api/account/register`、`/api/account/login`、`/api/account/logout` | 注册、登录与退出 |
+| POST | `/api/account/recovery`、`/api/account/reset-password` | 获取密保挑战与重置密码 |
+| POST | `/api/account/password`、`/api/account/security-questions` | 修改密码与密保 |
+| POST | `/api/account/import` | 确认导入或跳过匿名记录 |
+| GET | `/api/collection` | 读取片单 |
+| PUT / DELETE | `/api/collection/{anime_id}` | 设置状态和移出片单 |
+| GET | `/api/progress`、`/api/progress/{anime_id}` | 列出观看记录或读取单部进度 |
+| PUT / DELETE | `/api/progress/{anime_id}` | 保存或清空续播记录 |
+| GET | `/api/sources/{source_provider}/search` | 搜索指定来源的作品 |
+| PUT | `/api/sources/{source_provider}/bindings/{anime_id}` | 保存人工确认的来源关联 |
+| GET | `/api/playback/{anime_id}` | 选择剧集与来源，解析临时播放地址 |
 
-先执行 GET，再执行 PUT 或 DELETE。返回结构为 {"favorite_ids":["bgm-568244"]}。无有效会话写入返回 401，未收录条目返回 404，数据库暂不可用返回 503。
+片单状态使用 `wish`、`watching`、`completed`，分别对应想看、在看、看完。旧 `/api/favorites` 接口继续提供收藏 ID 的兼容读写。
 
-## 配置
+需要身份的写操作由 Cookie 确定归属，片单与进度等前端请求还带上 `X-Tsukimi-Scope` 校验当前身份。进度保存与删除还携带 `scope`、`revision` 和 `operation_id`，用于身份检查、并发版本检查及重试识别。具体请求字段和响应结构可通过接口文档及对应路由模块查看。
 
-- TSUKIMI_DATABASE：数据库路径，默认当前 backend/data/tsukimi.db。
-- TSUKIMI_ALLOWED_ORIGINS：逗号分隔的允许写入来源；默认包含本机 3000 前端与 8000 文档页。换开发端口时同步修改。
-- TSUKIMI_COOKIE_SECURE=1：HTTPS 部署时启用；本地 HTTP 开发默认关闭。
+## 配置与持久化
 
-当前浏览器请求先到 Next.js 的同源 /api，再转发到 FastAPI，不需要额外开放跨域 CORS。当前服务仅绑定 127.0.0.1，公网部署留到部署课程阶段。
+启动时读取本目录的 `.env`，示例见 [.env.example](.env.example)。
 
-## 测试
+| 环境变量 | 默认值或用途 |
+| --- | --- |
+| `TSUKIMI_DATABASE` | 默认本目录下的 `data/tsukimi.db` |
+| `TSUKIMI_ALLOWED_ORIGINS` | 逗号分隔的浏览器来源，默认包含本机 3000 与 8000 地址 |
+| `TSUKIMI_COOKIE_SECURE` | 本地 HTTP 默认为 `0`，HTTPS 部署设为 `1` |
+| `TSUKIMI_ANICH_API` | 默认 `https://anich.sends.eu.org`，可配置 AniCh 服务地址 |
+| `TSUKIMI_XIFAN_PUBLIC_KEY` | 可覆盖稀饭适配器使用的公开接口标识，默认采用适配器内置值 |
+
+SQLite 保存会话、账号、片单、进度、来源偏好及资料缓存。兼容迁移在初始化时执行，特定旧表升级会先创建相应备份。常规发布另按 [部署指南](../../docs/10-部署与管理员迁移.md) 保存数据库快照。
+
+## 资料与播放来源
+
+资料 ID 使用 Bangumi 标识，播放作品与线路编号分别归属所选来源。AniCh 与稀饭的编号通过来源标记隔离，自动匹配会核对作品身份，页面提供人工校正入口。解析过程支持备用来源补位和用户优先级选择。
+
+后端返回候选线路与临时媒体地址，播放器直接连接 CDN。资料缓存、账号偏好和观看进度分别保存，签名播放地址按播放请求重新解析。实际来源与线路可用性由外部服务响应决定。
+
+## 测试与工具
+
+在本目录执行后端测试。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m unittest -v
 ```
 
-测试不修改个人数据库。当前依赖版本的 TestClient 会提示旧 httpx 兼容层将弃用，该提示不影响测试执行。
+Linux 使用 `.venv/bin/python` 替换 Python 路径。测试通过临时数据库和模拟上游覆盖账号、片单、观看进度、匹配逻辑、迁移与并发请求。
 
-## AniCh 聚合播放（当前正式来源）
+管理员创建同样在本目录执行，密码在终端交互输入。
 
-- anich.py：固定聚合服务适配、作品关联核对、逐集候选过滤与线路排序。
-- anich_protocol.py：有大小/截断检查的 Protobuf wire 读取和官方公开 URL 解码规则；未知字段跳过。
-- GET /api/sources/anich/search?q=关键词：来源作品搜索；年份未核实时不伪造。
-- PUT /api/sources/anich/bindings/{anime_id}：JSON 为 {"source_anime_id":32339}，需要匿名会话与同源写入校验。
-- GET /api/playback/{anime_id}?episode=1：自动匹配、解析临时播放地址。显式选择可附 source_provider=anich、source_anime_id、line_id。
-- TSUKIMI_ANICH_API：默认 https://anich.sends.eu.org；无需配置，新终端修改后重启后端生效。
+```powershell
+.\.venv\Scripts\python.exe create_admin.py --username your_admin
+```
 
-关联优先核对详情 sites 中的 Bangumi ID，没有映射才使用精确名称与年份/集数证据；错误映射不自动选择，人工确认也不能保存已明确关联另一作品的条目。搜索最多两次、每次核对最多四个同名候选详情。
+管理员角色用于账号身份区分，管理后台列入后续规划。已有管理员的导出、传输与导入操作见 [管理员迁移指南](../../docs/10-部署与管理员迁移.md#d-管理员为什么需要单独迁移)。
 
-SQLite 沿用 source_bindings/auto_source_bindings，以 anich:bgm-… 作为 AniCh 键；旧未加前缀的稀饭偏好保留但不读取为 AniCh。旧 URL 无 provider 标记的数字不继续当成新来源 ID。收藏、Cookie 和资料 ID 保持原状，无表迁移或数据删除。
-
-详情/剧集缓存 5 分钟、搜索 10 分钟、缓存最多 96 项；VOD 每次请求，不持久化签名地址。线路编号使用来源标识、清晰度、编码、格式的确定性 48 位哈希，不依赖返回下标或签名 URL。按作品说明/季数/集数筛选并将重复镜像合并到同一组，格式未知或资源失效仍可能不能播；前端允许一键换线。显式所选线路缺失时返回 unavailable 和其他候选。
-
-视频直接由浏览器读取 CDN，不代理媒体字节。只接受 HTTPS、公网形式地址，不接受凭证、本机/私网字面 IP、非标准端口；这不等于对所有 CDN 的在线健康检查。优先 H.264、已实测 CDN 和较高清晰度，HLS 继续通过 hls.js 播放。旧稀饭适配器、预置映射及专用测试已删除；共用 SourceError 移到 source_errors.py。旧实现见 Git f8dcedb，当前代码仅维护 AniCh。
-
-当前共 40 项后端测试，来源测试使用 MockTransport，无需访问真实上游。真实播放验证见根目录 docs/07-联网资料与追番片单.md 的 F。旧稀饭接口过程可从 Git 9a0dda8 查看。
-
-## 联网资料与片单状态（2026-10-27）
-
-- GET /api/catalog：q、year、season、genre、sort、page、limit；搜索仅查询动画，排序为 match/heat/score/rank。
-- GET /api/catalog/{anime_id}：读取完整详情，可从带提示的缓存回退；不是仅允许原来九个 ID。
-- GET /api/catalog/calendar：当前每周放送计划，星期与追番筛选由前端执行，不保证来源已上架新一集。
-- GET /api/collection：建立/读取原匿名会话，返回 items，其中含 anime、status、updated_at。
-- PUT /api/collection/{anime_id}：JSON 为 {"status":"wish"}，允许 wish/watching/completed。
-- DELETE /api/collection/{anime_id}：移出片单，返回更新后的完整片单。
-
-旧 favorites 表增加 status 与 updated_at，既有收藏默认 wish；catalog_cache 存公开资料快照，片单重启后不依赖进程内目录。旧接口保持兼容，其 PUT 不会覆盖已经设置的追番状态。非法状态 422、失效会话 401、跨来源写入 403、资料不存在 404、数据库故障 503。
-
-catalog.py 使用固定 Bangumi 主机、公开只读接口、超时与有限大小的上游响应缓存。搜索/日历响应缓存约 10 分钟；详情快照约 24 小时，错误回退明确提示。临时视频 URL 不进入资料缓存或数据库。测试使用临时数据库和模拟上游；当前 TestClient 的弃用提示保持原状，不为本轮改动替换测试依赖。
-
-## 版本与学习入口
-
-当前后端版本 0.5.0，运行依赖不变，仍按现有双终端方式启动。指南 06 保留旧单源阶段记录，指南 07 F 描述当前聚合接口；不得将实现已完成视为本人已阅读或掌握。
-
-线路列表还返回临时 url 与 format，供浏览器直连 CDN 检测首包响应；同样使用 no-store，不写入数据库。后端不代测延迟、不转发视频、不获取文件大小。
-
-GET /api/catalog/{anime_id}?summary=true 用于页面导航，命中 SQLite 时立即返回已有快照，不等待完整资料；缓存未命中仍查询真实条目，404 不伪造。默认不带 summary 的接口继续补齐资料。搜索的简略结果不覆盖已有完整详情或刷新其详情时间戳，以免每次搜索后重复补齐。
+- [资料库、追番与双来源复习](../../docs/07-联网资料与追番片单.md)
+- [账号、进度与版本冲突复习](../../docs/08-观看进度与邮箱账号.md)
