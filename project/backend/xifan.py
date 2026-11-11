@@ -10,6 +10,8 @@ from source_errors import SourceError
 import httpx
 
 API_ROOT = "https://api.xifanacg.com"
+# Cloud-download redirects can be blocked by browser ORB checks.
+MEDIA_HOSTS = {"play.xfvod.pro", "dl.playxf.top"}
 # Public, anonymous client key published in KazumiRules/xfdmnext.json, not a user credential.
 PUBLIC_KEY = "sb_publishable_OBIVAWACIX6lPXrO98_z24_HcsmalkA"
 
@@ -143,13 +145,33 @@ class XifanSource:
         if not isinstance(data, dict) or data.get("ok") is not True:
             raise SourceError("来源暂未提供可播放地址，请稍后重试或在来源站查看。")
         candidates = data.get("candidates") if isinstance(data.get("candidates"), list) else []
-        url = data.get("url") or (candidates[0].get("url") if candidates and isinstance(candidates[0], dict) else None)
-        if not isinstance(url, str):
-            raise SourceError("来源暂未提供有效的视频地址。")
-        parsed = urlparse(url or "")
-        # Never forward arbitrary URLs from a user or proxy video bytes through our backend.
-        if parsed.scheme != "https" or parsed.hostname not in {"play.xfvod.pro", "dl.playxf.top"} or parsed.username or parsed.password:
-            raise SourceError("来源返回的视频地址暂不受支持，请在来源站查看。")
+        urls = [data.get("url")] + [item.get("url") for item in candidates if isinstance(item, dict)]
+        for url in urls:
+            if not isinstance(url, str):
+                continue
+            try:
+                parsed = urlparse(url)
+                supported = (
+                    parsed.scheme == "https" and parsed.hostname in MEDIA_HOSTS
+                    and not parsed.username and not parsed.password
+                    and (parsed.port is None or 1 <= parsed.port <= 65535)
+                )
+            except ValueError:
+                continue
+            if supported:
+                break
+        else:
+            if line_id is None:
+                alternatives = [item for item in lines if item["id"] != line["id"] and any(
+                    isinstance(entry, dict) and entry.get("kind") == "main"
+                    and entry.get("episode_number") == episode_number for entry in item["episodes"]
+                )]
+                for alternative in alternatives[:3]:
+                    try:
+                        return self.resolve(source_anime_id, episode_number, alternative["id"])
+                    except SourceError:
+                        continue
+            raise SourceError("来源返回的视频地址暂不受支持，请切换线路或在来源站查看。")
         selected_line = next(item for item in common["lines"] if item["id"] == line["id"])
         selected_line["url"] = url
         return {**common, "status": "ready", "format": "hls" if parsed.path.lower().endswith(".m3u8") else "mp4", "url": url,

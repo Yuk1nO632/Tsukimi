@@ -2,6 +2,7 @@ import sqlite3
 from contextlib import closing
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import httpx
@@ -173,6 +174,44 @@ class XifanAdapterTests(unittest.TestCase):
         provider.resolve(588, 2)
         self.assertEqual(sum(path.endswith('issue-web-playback') for path, body in self.calls), 2)
         self.assertEqual(self.calls[-1][1]['episode_id'], 2)
+
+    def test_direct_media_hosts_and_invalid_ports(self):
+        for host in ('play.xfvod.pro', 'dl.playxf.top'):
+            with self.subTest(host=host):
+                self.assertEqual(self.provider(f'https://{host}/video.mp4').resolve(588, 1)['status'], 'ready')
+        self.assertEqual(self.provider('https://play.xfvod.pro:8088/video.mp4').resolve(588, 1)['status'], 'ready')
+        for url in ('https://apn.moedot.net/video.mp4', 'https://hydownload.pan.wo.cn/video.mp4', 'http://play.xfvod.pro/video.mp4', 'https://play.xfvod.pro:99999/video.mp4',
+                    'https://play.xfvod.pro:bad/video.mp4', 'https://user@play.xfvod.pro/video.mp4',
+                    'https://play.xfvod.pro.evil.test/video.mp4'):
+            with self.subTest(url=url), self.assertRaises(SourceError):
+                self.provider(url).resolve(588, 1)
+
+    def test_usable_candidate_is_selected_after_unsupported_primary_url(self):
+        provider = self.provider()
+        original = provider._post
+        def response(path, body):
+            if path.endswith('issue-web-playback'):
+                return {'ok': True, 'url': 'https://unknown.test/bad.mp4', 'candidates': [None,
+                    {'url': 'https://dl.playxf.top/good.m3u8'}]}
+            return original(path, body)
+        with patch.object(provider, '_post', side_effect=response):
+            result = provider.resolve(588, 1)
+        self.assertEqual((result['url'], result['format']), ('https://dl.playxf.top/good.m3u8', 'hls'))
+
+    def test_automatic_line_can_fall_back_but_explicit_selection_is_respected(self):
+        provider = self.provider()
+        detail = provider.detail(588)
+        detail['sources'].append({'id': 6, 'name': '备用', 'episodes': [{'id': 3, 'kind': 'main', 'episode_number': 1}]})
+        original = provider._post
+        def response(path, body):
+            if path.endswith('issue-web-playback'):
+                host = 'unknown.test' if body['source_id'] == 5 else 'play.xfvod.pro'
+                return {'ok': True, 'url': f'https://{host}/video.mp4'}
+            return original(path, body)
+        with patch.object(provider, '_post', side_effect=response):
+            self.assertEqual(provider.resolve(588, 1)['line_id'], 6)
+            with self.assertRaises(SourceError):
+                provider.resolve(588, 1, 5)
 
     def test_wrong_identity_unsafe_url_missing_episode_and_line(self):
         provider = self.provider('https://127.0.0.1/private.mp4')
