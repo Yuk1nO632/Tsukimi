@@ -6,6 +6,7 @@ import { useCollection } from "./collection-provider";
 import { useAccount } from "./account-provider";
 import HeaderSearch from "./header-search";
 import Brand from "./brand";
+import ThemeSelect from "./theme-select";
 import { Suspense } from "react";
 
 export default function SiteHeader() {
@@ -61,6 +62,7 @@ export default function SiteHeader() {
           <span className="saved-text">追番</span>
           <strong>{status === "ready" ? favoriteIds.length : "—"}</strong>
         </Link>
+        <ThemeSelect />
         <Link href="/account" className="header-account" aria-label={account.user ? "我的账号" : "登录或注册"}>
           <span aria-hidden="true">{account.user?.nickname.slice(0, 1) || "☾"}</span>
           <span>{account.user?.nickname || "登录"}</span>

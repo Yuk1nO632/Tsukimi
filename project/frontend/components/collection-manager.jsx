@@ -49,7 +49,7 @@ export default function CollectionManager() {
         {account.user ? `${account.user.nickname}的片单` : "匿名片单 · 当前浏览器"}
         <span>{account.user ? "已关联账号 · 切回页面时更新" : <Link href="/account">登录以跨设备同步 →</Link>}</span>
       </div>
-      <ContinueWatching manage />
+      <ContinueWatching />
       <div className="collection-toolbar">
         <div className="portal-tabs" role="group" aria-label="追番状态筛选">
           {[["all", "全部"], ...Object.entries(collectionLabels)].map(

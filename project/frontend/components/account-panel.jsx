@@ -189,6 +189,7 @@ export default function AccountPanel() {
         <span className="portal-eyebrow">TSUKIMI ACCOUNT</span>
         <h1>{account.user ? "我的账号" : "登录与注册"}</h1>
         <p>管理片单与观看进度</p>
+        <Link className="outline-button history-entry" href="#watch-history">观看历史 →</Link>
       </header>
       <section className="account-card" aria-label="账号管理">
         {!account.ready ? (

@@ -15,7 +15,10 @@ export const metadata = {
 };
 export default function RootLayout({ children }) {
   return (
-    <html lang="zh-CN" data-scroll-behavior="smooth">
+    <html lang="zh-CN" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){var t="system";try{t=localStorage.getItem("tsukimi-theme")||"system"}catch(e){}document.documentElement.dataset.theme=t==="dark"||t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"})()` }} />
+      </head>
       <body>
         <AccountProvider><CollectionProvider>
           <SiteHeader />

@@ -14,6 +14,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   const progressCallback = useRef(onProgress);
   progressCallback.current = onProgress;
   const startedRef = useRef(false);
+  const shortcutShown = useRef(false);
   const restoredRef = useRef(false);
   function reportProgress(force = false, complete = false) {
     const video = videoRef.current;
@@ -201,16 +202,16 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     const seekArrow = event.target.matches(".seek-range") &&
       (key === "arrowleft" || key === "arrowright");
     const playerButtonKey = frameRef.current?.contains(event.target) &&
-      event.target.closest("button") && (arrow || ["k", "m", "f"].includes(key));
+      event.target.closest("button") && (arrow || ["k", "m", "f", "d"].includes(key));
     const control = event.target.closest('input,textarea,select,button,a,summary,[role="textbox"],[contenteditable]:not([contenteditable="false"])');
     if (event.altKey || event.ctrlKey || event.metaKey ||
       (control && !seekArrow && !playerButtonKey)) return;
-    if (![" ", "k", "arrowleft", "arrowright", "arrowup", "arrowdown", "m", "f"].includes(key)) return;
+    if (![" ", "k", "arrowleft", "arrowright", "arrowup", "arrowdown", "m", "f", "d"].includes(key)) return;
     event.preventDefault();
     if (event.repeat && !arrow) return;
     revealControls();
     if (key === " " || key === "k") togglePlay();
-    else if (key === "f") fullscreen();
+    else if (key === "f" || key === "d") fullscreen();
     else if (key === "m") toggleMute();
     else if (key === "arrowleft" || key === "arrowright") {
       const offset = key === "arrowright" ? 5 : -5;
@@ -241,7 +242,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   const heading = videoError ? "暂时无法播放这一集" : media.status === "loading" ? "正在匹配并加载来源" : media.status === "unmatched" ? "先为这部番找到播放来源" : media.reason === "no_resources" ? "已匹配作品，暂无播放资源" : media.reason === "episode_missing" ? "来源目录暂缺这一集" : "来源暂时没有准备好";
   const percent = duration ? Math.min(100, currentTime / duration * 100) : 0;
 
-  return <div className={`player-frame${controlsVisible ? " controls-visible" : " controls-hidden"}${initialLoading ? " is-initial-loading" : ""}`} ref={frameRef} tabIndex={0} role="region" aria-label={`${label}播放器，空格播放暂停，方向键快进或调节音量，F 全屏`} onKeyDown={onKeyDown} onPointerMove={revealControls} onPointerDown={(event) => { touchReveal.current = event.pointerType === "touch" && !controlsVisible && event.target === videoRef.current; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }}>
+  return <div className={`player-frame${controlsVisible ? " controls-visible" : " controls-hidden"}${initialLoading ? " is-initial-loading" : ""}`} ref={frameRef} tabIndex={0} role="region" aria-label={`${label}播放器，空格播放暂停，方向键快进或调节音量，D 或 F 全屏`} onKeyDown={onKeyDown} onPointerMove={revealControls} onPointerDown={(event) => { touchReveal.current = event.pointerType === "touch" && !controlsVisible && event.target === videoRef.current; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }}>
     <div className="player-canvas" onClick={clickCanvas} onDoubleClick={(event) => { if (event.target === videoRef.current || event.target === event.currentTarget) { window.clearTimeout(clickTimer.current); fullscreen(); } }}>
       {available && <video ref={videoRef} className="actual-video" preload="metadata" autoPlay={active !== false && shouldAutoPlay} muted={muted} playsInline poster={poster} src={active === undefined && media.format !== "hls" ? media.url : undefined} aria-label={label}
         onLoadedData={() => setHasFrame(true)} onEmptied={() => setHasFrame(false)}
@@ -256,7 +257,13 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onTimeUpdate={(event) => { setCurrentTime(event.currentTarget.currentTime); reportProgress(); }}
         onSeeked={() => reportProgress(true)}
-        onPlay={() => { startedRef.current = true; setPlaying(true); setEnded(false); }} onPause={() => { setPlaying(false); reportProgress(true); }}
+        onPlay={() => {
+          startedRef.current = true; setPlaying(true); setEnded(false);
+          if (globalKeyboard && !shortcutShown.current) {
+            shortcutShown.current = true;
+            setNotice("按 D / F 全屏，← → 快退 / 快进 5 秒");
+          }
+        }} onPause={() => { setPlaying(false); reportProgress(true); }}
         onWaiting={() => setWaiting(true)} onPlaying={() => { setWaiting(false); setPlaying(true); }}
         onCanPlay={() => setWaiting(false)} onEnded={() => { setPlaying(false); setWaiting(false); setEnded(true); reportProgress(true, true); }}
         onVolumeChange={(event) => { setVolume(event.currentTarget.volume); setMuted(event.currentTarget.muted); }}
@@ -277,7 +284,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
       <div className="player-volume"><button type="button" onClick={toggleMute} disabled={!available} aria-label={muted ? "取消静音" : "静音视频"} title="静音（M）"><PlayerIcon name={muted || volume === 0 ? "mute" : "volume"} /></button><input aria-label="音量" type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} disabled={!available} onChange={(event) => changeVolume(event.target.value)} /></div>
       <select aria-label="播放速度" title="播放倍速" value={speed} disabled={!available} onChange={(event) => changeSpeed(event.target.value)}>{[0.5, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate === 1 ? "倍速" : `${rate}×`}</option>)}</select>
       {onWide && <button className="player-wide" type="button" aria-label={wide ? "退出宽屏" : "宽屏模式"} aria-pressed={wide} title={wide ? "退出宽屏" : "宽屏模式"} onClick={onWide}><PlayerIcon name="wide" /></button>}
-      <button type="button" onClick={fullscreen} aria-label={isFullscreen ? "退出播放器全屏" : "播放器全屏"} title={isFullscreen ? "退出全屏（F / Esc）" : "全屏（F）"}><PlayerIcon name={isFullscreen ? "restore" : "fullscreen"} /></button>
+      <button type="button" onClick={fullscreen} aria-label={isFullscreen ? "退出播放器全屏" : "播放器全屏"} title={isFullscreen ? "退出全屏（D / F / Esc）" : "全屏（D / F）"}><PlayerIcon name={isFullscreen ? "restore" : "fullscreen"} /></button>
     </div>
   </div>;
 }

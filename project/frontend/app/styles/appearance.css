@@ -1,0 +1,67 @@
+/* Shared appearance controls and account history. */
+.theme-select {
+  max-width: 108px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+.history-entry { margin-top: 12px; }
+.account-history { padding-bottom: 40px; }
+.account-history .continue-section { scroll-margin-top: 100px; }
+.history-empty { padding: 28px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e8e9f0;
+  --muted: #a3aabd;
+  --line: #343744;
+  --pink: #f18bb0;
+  --blue: #f18bb0;
+  --soft: #242631;
+  --surface: #1c1e28;
+  --accent-soft: #392735;
+  --portal-muted: #a3aabd;
+  --portal-border: #343744;
+  --portal-soft: #242631;
+  --shadow-sm: 0 4px 18px #0002;
+  --shadow-panel: 0 12px 38px #0003;
+}
+:root[data-theme="dark"] body { background: #14161e; color: var(--ink); }
+:root[data-theme="dark"] .site-header { background: #191b25f2; border-color: var(--line); }
+:root[data-theme="dark"] :is(.header-navigation,.mobile-navigation,.portal-heading p,.original-title,.synopsis,.anime-facts dd,.breadcrumbs,.detail-copy p,.watch-tags,.account-email) { color: var(--muted); }
+:root[data-theme="dark"] :is(.header-navigation .nav-active,.portal-heading h1,.section-heading h2,.calendar-day-heading h3,.source-results strong,.ranking-copy strong,.search-suggest-copy strong) { color: var(--ink); }
+:root[data-theme="dark"] :is(.account-card,.continue-card,.anime-card,.catalog-filter-panel,.calendar-board,.schedule-card,.portal-empty,.home-season-ranking,.home-category-nav,.home-collection-strip,.home-saved-list>a,.watch-sidebar,.watch-episode-navigation,.playback-help>div,.header-search-dropdown,.line-probe-list,.line-probe-list>button,.source-results>button,.genre-collection,.home-shortcuts>a,.home-hero-loading,.poster) {
+  background: var(--surface); border-color: var(--line); color: var(--ink);
+}
+:root[data-theme="dark"] :is(.series-overview,.detail-overview) { background: linear-gradient(130deg,#242633,#24202e); border-color: var(--line); }
+:root[data-theme="dark"] :is(.header-search input,.account-form input,.catalog-query input,.catalog-selects select,.collection-tools input,.collection-tools select,.calendar-tools>input,.source-search-input,.source-line-label select,.collection-status-picker,.search-input-wrap input) {
+  background: var(--soft); border-color: var(--line); color: var(--ink);
+}
+:root[data-theme="dark"] :is(.outline-button,.favorite-button,.pagination button,.ranking-empty button,.line-probe-actions button,.collection-status button) { background: var(--surface); border-color: var(--line); color: var(--ink); }
+:root[data-theme="dark"] :is(.portal-tabs,.collection-summary,.watch-source-panel,.watch-source-panel.needs-source,.detail-cache-note,.channel-season-pill,.calendar-empty,.catalog-toolbar,.account-message,.account-import,.account-role,.detail-tags span,.detail-tags>a,.watch-tags>span,.episode-link,.series-episode-grid>a,.episode-selector>a,.home-category-links a,.search-suggest-all,.collection-status) {
+  background: var(--soft); border-color: var(--line); color: var(--muted);
+}
+:root[data-theme="dark"] :is(.portal-tabs>button[aria-pressed="true"],.episode-selector>a[aria-current="page"],.favorite-button[aria-pressed="true"],.search-suggest-option:hover,.search-suggest-option[aria-selected="true"],.source-results>button:hover,.source-results>button[aria-pressed="true"],.season-ranking-list a:hover,.series-episode-grid>a:hover) {
+  background: var(--accent-soft); border-color: #80516a; color: var(--pink);
+}
+:root[data-theme="dark"] .continue-remove { background: var(--surface); }
+:root[data-theme="dark"] :is(.site-footer,.source-matcher,.account-tabs,.ranking-heading,.ranking-footer) { border-color: var(--line); }
+:root[data-theme="dark"] :is(.skeleton-poster,.skeleton-line,.ranking-skeleton span,.ranking-skeleton i) { background: var(--soft); }
+:root[data-theme="dark"] ::selection { background: #75465e; color: white; }
+@media (max-width: 700px) {
+  .header-inner { gap: 10px; flex-wrap: wrap; height: auto; padding-block: 10px; }
+  .theme-select { margin-left: auto; max-width: 100px; }
+  .header-search { order: 5; width: 100%; }
+  .site-header { height: auto; }
+  .account-history .continue-section { scroll-margin-top: 190px; }
+}
+
+:root[data-theme="dark"] :is(h1,h2,h3,h4,.continue-copy strong) { color: var(--ink); }
+@media (max-width: 700px) {
+  .site-header .header-inner .header-search { order: 5; width: 100%; flex-basis: 100%; }
+}

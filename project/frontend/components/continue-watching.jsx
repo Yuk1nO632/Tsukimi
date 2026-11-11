@@ -17,11 +17,11 @@ export function progressUrl(item) {
   return `/watch/${item.anime_id || item.anime.id}?${query}`;
 }
 
-export default function ContinueWatching({ animeId, manage = false }) {
+export default function ContinueWatching({ animeId, manage = false, history = false }) {
   const account = useAccount();
   const pathname = usePathname();
   const [records, setRecords] = useState({ scope: null, items: [] });
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(history);
   const [removing, setRemoving] = useState(null);
   const [removeError, setRemoveError] = useState("");
   const readVersion = useRef(0);
@@ -73,7 +73,7 @@ export default function ContinueWatching({ animeId, manage = false }) {
   useEffect(() => {
     if (!manage) return;
     const expandHistory = () => {
-      if (window.location.hash === "#continue-watching") setExpanded(true);
+      if (["#continue-watching", "#watch-history"].includes(window.location.hash)) setExpanded(true);
     };
     expandHistory();
     window.addEventListener("hashchange", expandHistory);
@@ -120,8 +120,8 @@ export default function ContinueWatching({ animeId, manage = false }) {
   }
   const available = items.filter(
     (item) =>
-      !item.completed &&
-      item.position > 0 &&
+      (history || (!item.completed && item.position > 0)) &&
+      item.duration > 0 &&
       (!animeId || (item.anime?.id || item.anime_id) === animeId),
   );
   const visible = available.slice(
@@ -140,7 +140,14 @@ export default function ContinueWatching({ animeId, manage = false }) {
         </button>
       </p>
     );
-  if (!visible.length) return null;
+  if (!visible.length) return history ? (
+    <section id="watch-history" className="continue-section" aria-label="观看历史">
+      <div className="portal-section-heading"><h2>观看历史</h2></div>
+      <p className="history-empty" role="status">
+        {!account.ready || records.scope !== account.scope ? "正在读取观看记录…" : "还没有观看记录，播放番剧后会自动保存。"}
+      </p>
+    </section>
+  ) : null;
   if (animeId)
     return (
       <Link
@@ -153,10 +160,10 @@ export default function ContinueWatching({ animeId, manage = false }) {
       </Link>
     );
   return (
-    <section id="continue-watching" className="continue-section" aria-label="继续观看">
+    <section id={history ? "watch-history" : "continue-watching"} className="continue-section" aria-label={history ? "观看历史" : "继续观看"}>
       <div className="portal-section-heading">
         <div>
-          <h2>继续观看</h2>
+          <h2>{history ? `观看历史（${available.length}）` : "继续观看"}</h2>
           <span>
             {account.user ? "已同步的观看记录" : "当前浏览器的观看记录"}
           </span>
@@ -172,8 +179,8 @@ export default function ContinueWatching({ animeId, manage = false }) {
           </button>
         )}
         {!manage && (
-          <Link href="/collection#continue-watching">
-            查看全部（{available.length}） →
+          <Link href="/account#watch-history">
+            观看历史 →
           </Link>
         )}
       </div>
@@ -204,7 +211,7 @@ export default function ContinueWatching({ animeId, manage = false }) {
                     }}
                   />
                 </span>
-                <small>继续播放 →</small>
+                <small>{item.completed ? "已看完 · 再次播放 →" : "继续播放 →"}</small>
               </span>
             </Link>
             <button
