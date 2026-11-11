@@ -594,7 +594,7 @@ class AniChTests(unittest.TestCase):
                     provider.discover({'id': 'bgm-386809', 'title': '【我推的孩子】', 'aliases': 'Oshi no Ko'})
                 self.assertEqual(raised.exception.status_code, 503)
                 self.assertIn('未授权', str(raised.exception))
-                self.assertEqual(keywords, ['【我推的孩子】'])
+                self.assertEqual(keywords, ['我推的孩子'])
 
     def test_non_auth_server_errors_keep_title_fallback(self):
         keywords = []
@@ -602,11 +602,11 @@ class AniChTests(unittest.TestCase):
         def handle(request):
             keyword = request.url.params['keyword']
             keywords.append(keyword)
-            if keyword != '我推的孩子':
+            if keyword != '作品名称':
                 return httpx.Response(500, json={'error': True, 'message': 'internal error'})
-            return httpx.Response(200, content=field(1, field(1, 32094) + field(2, '【我推的孩子】')))
+            return httpx.Response(200, content=field(1, field(1, 32094) + field(2, '作品名称：副标题')))
 
         provider = AniChSource(transport=httpx.MockTransport(handle))
         self.addCleanup(provider.close)
-        self.assertEqual(provider.search('【我推的孩子】')[0]['id'], 32094)
-        self.assertEqual(keywords, ['【我推的孩子】', '我推的孩子'])
+        self.assertEqual(provider.search('作品名称：副标题')[0]['id'], 32094)
+        self.assertEqual(keywords, ['作品名称：副标题', '作品名称'])

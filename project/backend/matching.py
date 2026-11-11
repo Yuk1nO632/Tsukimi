@@ -45,7 +45,11 @@ def fallback_search_title(value):
 
 def search_keyword(value):
     """Normalize lookup punctuation without changing the stored work identity."""
-    return value.strip().rstrip("!！?？△ \t\r\n")
+    keyword = value.strip().rstrip("!！?？△ \t\r\n")
+    wrappers = {"【": "】", "《": "》", "「": "」", "『": "』"}
+    if len(keyword) > 1 and wrappers.get(keyword[0]) == keyword[-1]:
+        keyword = keyword[1:-1].strip()
+    return keyword
 
 
 def discovery_queries(anime):

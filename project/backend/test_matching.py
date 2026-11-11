@@ -1,6 +1,6 @@
 """Provider-independent name, alias and season evidence used by AniCh fallback."""
 import unittest
-from matching import exact_source, special_search_title, fallback_search_title, discovery_queries, season_number, part_number
+from matching import exact_source, special_search_title, fallback_search_title, discovery_queries, season_number, part_number, search_keyword
 
 
 class MatchingTests(unittest.TestCase):
@@ -76,3 +76,12 @@ class MatchingTests(unittest.TestCase):
             'aliases': '测试作品！！ / 测试作品 / Another title',
         })
         self.assertEqual(queries, ['测试作品', 'Another title'])
+
+    def test_wrapped_lookup_titles_keep_identity_and_internal_punctuation(self):
+        anime = {'title': '【我推的孩子】', 'originalTitle': '', 'aliases': ''}
+        self.assertEqual(discovery_queries(anime)[0], '我推的孩子')
+        self.assertEqual(anime['title'], '【我推的孩子】')
+        for value in ('【作品名称】', '《作品名称》', '「作品名称」', '『作品名称』'):
+            self.assertEqual(search_keyword(value), '作品名称')
+        self.assertEqual(search_keyword('作品【副标题】'), '作品【副标题】')
+        self.assertEqual(search_keyword('Fate/stay night'), 'Fate/stay night')
