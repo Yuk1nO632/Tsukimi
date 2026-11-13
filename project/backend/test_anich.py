@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from anich import AniChSource, public_media_url
 from anich_protocol import fields, decode_url
+from catalog import BangumiClient
 from database import Database
 from main import create_app
 from source_errors import SourceError
@@ -579,7 +580,7 @@ class AniChTests(unittest.TestCase):
             })
         self.assertEqual(keywords, ['测试作品！恋', '测试作品', '测试作品!恋'])
 
-    def test_json_unauthorized_stops_discovery_even_when_upstream_status_is_500(self):
+    def test_json_unauthorized_retries_distinct_queries_and_raises_503_when_all_fail(self):
         for status in (200, 401, 500):
             with self.subTest(status=status):
                 keywords = []
@@ -594,7 +595,143 @@ class AniChTests(unittest.TestCase):
                     provider.discover({'id': 'bgm-386809', 'title': '【我推的孩子】', 'aliases': 'Oshi no Ko'})
                 self.assertEqual(raised.exception.status_code, 503)
                 self.assertIn('未授权', str(raised.exception))
-                self.assertEqual(keywords, ['我推的孩子'])
+                self.assertEqual(keywords, ['我推的孩子', 'Oshi no Ko'])
+
+    def test_discovery_and_search_fallback_on_unauthorized_to_cached_base_title(self):
+        keywords = []
+
+        def handle(request):
+            path = request.url.path
+            if path.endswith('/search'):
+                keyword = request.url.params['keyword']
+                keywords.append(keyword)
+                if keyword == '黑色五叶草 第二季':
+                    return httpx.Response(500, json={'error': True, 'message': 'unauthorized', 'body': {}})
+                return httpx.Response(200, content=field(1, field(1, 39584) + field(2, '黑色五叶草 第二季')))
+            return httpx.Response(200, json={
+                'id': 39584, 'title': '黑色五叶草 第二季', 'airdate': 1790870400000,
+                'sites': [{'site': 'bangumi', 'id': '567896'}],
+            })
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        anime = {'id': 'bgm-567896', 'title': '黑色五叶草 第二季', 'year': '2026', 'episodes': 13}
+        self.assertEqual(provider.discover(anime)[0], 39584)
+        self.assertEqual(keywords, ['黑色五叶草 第二季', '黑色五叶草'])
+
+        manual_keywords = []
+
+        def handle_manual(request):
+            manual_keywords.append(request.url.params['keyword'])
+            return handle(request)
+
+        manual_provider = AniChSource(transport=httpx.MockTransport(handle_manual))
+        self.addCleanup(manual_provider.close)
+        self.assertEqual(manual_provider.search('黑色五叶草 第二季')[0]['id'], 39584)
+        self.assertEqual(manual_keywords, ['黑色五叶草 第二季', '黑色五叶草'])
+
+    def test_cumulative_sort_maps_sequel_episode_without_shifting_missing_episode_one(self):
+        vod_paths = []
+
+        def handle(request):
+            path = request.url.path
+            if '/detail/39528' in path:
+                return httpx.Response(200, json={
+                    'id': 39528, 'title': '药屋少女的呢喃 第三季', 'titles': ['薬屋のひとりごと 第3期'],
+                    'episodes_total': 12, 'sites': [{'site': 'bangumi', 'id': '568244'}],
+                })
+            if '/episodes/39528' in path:
+                return httpx.Response(200, content=field(1, field(1, 1) + field(2, 49)) + field(1, field(1, 1) + field(2, 50)))
+            if path == '/vod/39528/49':
+                vod_paths.append(path)
+                row = field(1, field(1, encoded('https://v1.adkwai.com/ep49.mp4')) + field(2, 1) + field(5, '线路1') + field(6, '药屋少女的呢喃 第三季 · H.264'))
+                return httpx.Response(200, json=list(row))
+            if '/detail/99' in path:
+                return httpx.Response(200, json={'id': 99, 'title': '测试新番', 'episodes_total': 12})
+            if '/episodes/99' in path:
+                return httpx.Response(200, content=field(1, field(1, 1) + field(2, 2)) + field(1, field(1, 1) + field(2, 3)))
+            if path.startswith('/vod/'):
+                vod_paths.append(path)
+            raise AssertionError(f'unexpected path {path}')
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        anime = {'id': 'bgm-568244', 'title': '药屋少女的呢喃 第三季', 'episodes': 12}
+        ready = provider.resolve(39528, 1, anime=anime)
+        self.assertEqual(ready['status'], 'ready')
+        self.assertEqual(ready['episode_count'], 2)
+        self.assertEqual(vod_paths, ['/vod/39528/49'])
+
+        missing_ep3 = provider.resolve(39528, 3, anime=anime)
+        self.assertEqual(missing_ep3['status'], 'unavailable')
+        self.assertEqual(missing_ep3['reason'], 'episode_missing')
+
+        missing_ep1 = provider.resolve(99, 1)
+        self.assertEqual(missing_ep1['status'], 'unavailable')
+        self.assertEqual(missing_ep1['reason'], 'episode_missing')
+        self.assertEqual(vod_paths, ['/vod/39528/49'])
+
+    def test_resolve_accepts_bangumi_aliases_for_vod_while_preserving_season_isolation(self):
+        def handle(request):
+            path = request.url.path
+            if path.endswith('/search'):
+                return httpx.Response(200, content=field(1, field(1, 39604) + field(2, '青之箱 第二季')))
+            if '/detail/39604' in path:
+                return httpx.Response(200, json={
+                    'id': 39604, 'title': '青之箱 第二季', 'titles': ['アオのハコ Season 2'],
+                    'airdate': 1790956800000, 'episodes_total': 12, 'sites': [{'site': 'bangumi', 'id': '548156'}],
+                })
+            if '/episodes/39604' in path:
+                return httpx.Response(200, content=field(1, field(1, 1) + field(2, 26)))
+            rows = []
+            for idx, (title, line_name) in enumerate([
+                ('蓝箱 第二季', 'AliasExact'),
+                ('Blue Box 第2季', 'AliasSeasonNormalized'),
+                ('蓝箱', 'AmbiguousSeason1'),
+                ('蓝箱 第一季', 'WrongSeason1'),
+                ('蓝箱 第三季', 'WrongSeason3'),
+            ]):
+                rows.append(field(1, field(1, encoded(f'https://v1.adkwai.com/v{idx}.mp4')) + field(2, 1) + field(5, line_name) + field(6, f'{title} · H.264')))
+            return httpx.Response(200, json=list(b''.join(rows)))
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        anime = {
+            'id': 'bgm-548156', 'title': '青之箱 第二季', 'originalTitle': 'アオのハコ Season 2',
+            'aliases': '蓝箱 第二季 / Blue Box Season 2 / 蓝箱', 'episodes': 12,
+        }
+        result = provider.resolve(39604, 1, anime=anime)
+        self.assertEqual(result['status'], 'ready')
+        self.assertEqual([item['name'] for item in result['lines']], ['AliasExact · H.264', 'AliasSeasonNormalized · H.264'])
+        self.assertEqual(result['filtered_candidates'], 3)
+
+        metadata = BangumiClient(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={
+            'id': 548156, 'type': 2, 'name': 'アオのハコ Season 2', 'name_cn': '青之箱 第二季',
+            'eps': 12, 'date': '2026-10-03',
+            'infobox': [{'key': '别名', 'value': [{'v': '蓝箱 第二季'}, {'v': 'Blue Box Season 2'}, {'v': '蓝箱'}]}],
+        })))
+        with TestClient(create_app(database_path=self.path, playback_source=provider, metadata_source=metadata)) as client:
+            response = client.get('/api/playback/bgm-548156', params={'episode': 1})
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload['status'], 'ready')
+            self.assertEqual([item['name'] for item in payload['lines']], ['AliasExact · H.264', 'AliasSeasonNormalized · H.264'])
+
+    def test_airdate_uses_shanghai_timezone_near_new_year_midnight(self):
+        def handle(request):
+            if request.url.path.endswith('/search'):
+                return httpx.Response(200, content=field(1, field(1, 777) + field(2, '跨年测试')))
+            # 2026-01-01 00:00:00 +08:00 == 2025-12-31 16:00:00 UTC
+            return httpx.Response(200, json={
+                'id': 777, 'title': '跨年测试', 'airdate': 1767196800000,
+                'sites': [{'site': 'bangumi', 'id': '777'}],
+            })
+
+        provider = AniChSource(transport=httpx.MockTransport(handle))
+        self.addCleanup(provider.close)
+        source_id, candidates = provider.discover({'id': 'bgm-777', 'title': '跨年测试', 'year': '2026', 'episodes': 12})
+        self.assertEqual(source_id, 777)
+        self.assertEqual(candidates[0]['year'], '2026')
 
     def test_non_auth_server_errors_keep_title_fallback(self):
         keywords = []

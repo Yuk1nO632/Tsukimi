@@ -1,5 +1,5 @@
 """AniCh aggregate adapter. Metadata/choices cached, signed video URLs never cached."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 import hashlib
 import ipaddress
@@ -14,10 +14,12 @@ import httpx
 
 from anich_protocol import LIMIT, fields, decode_url
 from matching import (
-    exact_source, title_key, season_number, fallback_search_title, discovery_queries,
-    part_number, special_search_title, search_keyword,
+    anime_titles, exact_source, title_key, season_number, strip_season,
+    fallback_search_title, discovery_queries, part_number, special_search_title, search_keyword,
 )
 from source_errors import SourceError
+
+SHANGHAI = timezone(timedelta(hours=8))
 
 
 def messages(payload):
@@ -68,7 +70,7 @@ class AniChSource:
                 if response.status_code == 404:
                     raise SourceError('AniCh 中的作品或剧集已不可用，请重新匹配。', 404)
                 if response.status_code == 401:
-                    raise SourceError('AniCh 接口返回未授权，暂时无法读取来源。', 503)
+                    raise SourceError('AniCh 接口返回未授权，暂时无法读取来源。', 503, reason='unauthorized')
                 if response.status_code == 403:
                     raise SourceError('AniCh 暂时拒绝请求，请稍后重试。', 503)
                 if response.status_code == 429:
@@ -83,7 +85,7 @@ class AniChSource:
                 is_json = 'application/json' in response.headers.get('content-type', '').lower()
                 result = json.loads(raw) if json_result or is_json else raw
                 if isinstance(result, dict) and str(result.get('message', '')).casefold() in {'unauthorized', 'unauthenticated'}:
-                    raise SourceError('AniCh 接口返回未授权，暂时无法读取来源。', 503)
+                    raise SourceError('AniCh 接口返回未授权，暂时无法读取来源。', 503, reason='unauthorized')
                 response.raise_for_status()
             if isinstance(result, dict) and result.get('error'):
                 raise SourceError('AniCh 服务暂时拒绝了请求，请稍后重试。', 503)
@@ -124,7 +126,7 @@ class AniChSource:
                 return items
             except SourceError as error:
                 fallback = fallback_search_title(keyword)
-                if allow_fallback and error.status_code == 502 and fallback and fallback != keyword:
+                if allow_fallback and (error.status_code == 502 or error.reason == 'unauthorized') and fallback and fallback != keyword:
                     return self.search(fallback)
                 raise
             except (ValueError, TypeError, KeyError, OverflowError, OSError) as error:
@@ -152,8 +154,7 @@ class AniChSource:
     def discover(self, anime):
         candidates = {}
         queries = discovery_queries(anime)
-        names = {title_key(value) for value in (anime.get('title', ''), anime.get('originalTitle', ''),
-            *re.split(r'\s+/\s+', anime.get('aliases', ''))) if value}
+        names = {title_key(value) for value in anime_titles(anime)}
         target_season = season_number(anime.get('title', '')) or season_number(anime.get('originalTitle', ''))
         target_part = part_number(anime.get('title', '')) or part_number(anime.get('originalTitle', ''))
         target_year = str(anime.get('year') or '')[:4]
@@ -175,7 +176,7 @@ class AniChSource:
                     candidates[item['id']] = item
                 search_succeeded = True
             except SourceError as error:
-                if error.status_code in (503, 504):
+                if error.status_code in (503, 504) and error.reason != 'unauthorized':
                     raise
                 last_error = error
                 continue
@@ -188,12 +189,12 @@ class AniChSource:
                 try:
                     detail = self.detail(item['id'])
                 except SourceError as error:
-                    if error.status_code in (503, 504):
+                    if error.status_code in (503, 504) and error.reason != 'unauthorized':
                         raise
                     continue
                 stamp = detail.get('airdate')
                 if isinstance(stamp, (int, float)) and stamp > 0:
-                    item = {**item, 'year': str(datetime.fromtimestamp(stamp / 1000, timezone.utc).year)}
+                    item = {**item, 'year': str(datetime.fromtimestamp(stamp / 1000, SHANGHAI).year)}
                     candidates[item['id']] = item
                 linked = self.mapped_ids(detail)
                 if anime['id'].removeprefix('bgm-') in linked:
@@ -227,26 +228,73 @@ class AniChSource:
                 raise SourceError('AniCh 剧集资料格式暂不受支持。') from error
         return self._cached(('episodes', source_id), load)
 
-    def resolve(self, source_id, episode_number, line_id=None):
-        detail = self.detail(source_id)
-        episodes = self.episodes(source_id)
+    @staticmethod
+    def _episode_mapping(episodes, detail, anime, episode_number, target_season):
+        """Map 1-based season episode numbers onto cumulative AniCh sort numbers when sequels continue prior seasons."""
         # The public client uses sort for VOD; standalone OAD/OVA records use type 0.
         # Keep specials separate when a record also contains main-series episodes.
         episode_type = 1 if any(row.get(1) == 1 for row in episodes) else 0
-        available = {row.get(2) for row in episodes
-                     if row.get(1, 0) == episode_type and type(row.get(2)) is int and row[2] > 0}
+        available = sorted({
+            row.get(2) for row in episodes
+            if row.get(1, 0) == episode_type and type(row.get(2)) is int and row[2] > 0
+        })
+        available_set = set(available)
+        first = available[0] if available else 0
+        raw_total = (anime.get('episodes') if isinstance(anime, dict) else 0) or detail.get('episodes_total') or 0
+        season_total = raw_total if type(raw_total) is int and raw_total > 0 else 0
+        is_sequel = (target_season or 0) > 1
+        cumulative_offset = (
+            first - 1
+            if first > 1 and (
+                (season_total > 0 and first > season_total) or
+                ((season_total == 0 or is_sequel) and first >= 12 and first > len(available))
+            )
+            else 0
+        )
+        target_sort = episode_number + cumulative_offset
+        episode_count = max((ep - cumulative_offset for ep in available), default=0) if cumulative_offset else max(available_set, default=0)
+        return available_set, target_sort, episode_count
+
+    @staticmethod
+    def _allowed_vod_titles(detail, anime, target_season):
+        """Allow verified AniCh names and matching Bangumi aliases without relaxing season boundaries."""
+        detail_titles = [detail['title'], *detail.get('titles', [])]
+        extra_titles = anime_titles(anime) if isinstance(anime, dict) else []
+        names = {title_key(value) for value in detail_titles if isinstance(value, str) and value}
+        for value in extra_titles:
+            season = season_number(value)
+            if not target_season or target_season == 1:
+                if season in (None, 1):
+                    names.add(title_key(value))
+            elif season == target_season:
+                names.add(title_key(value))
+        names.discard('')
+        season_bases = set()
+        if target_season and target_season > 1:
+            for value in (*detail_titles, *extra_titles):
+                if isinstance(value, str) and value and season_number(value) in (None, target_season):
+                    base = title_key(strip_season(value))
+                    if base:
+                        season_bases.add(base)
+        return names, season_bases
+
+    def resolve(self, source_id, episode_number, line_id=None, anime=None):
+        detail = self.detail(source_id)
+        episodes = self.episodes(source_id)
+        target_season = next((s for s in (season_number(v) for v in (detail['title'], *detail.get('titles', []))) if s), None)
+        available_set, target_sort, episode_count = self._episode_mapping(episodes, detail, anime, episode_number, target_season)
         common = {'provider': self.name, 'source_anime_id': source_id, 'source_title': detail['title'],
-                  'episode_count': max(available, default=0), 'lines': [], 'line_id': None}
-        if episode_number not in available:
+                  'episode_count': episode_count, 'lines': [], 'line_id': None}
+        if target_sort not in available_set:
             return {**common, 'status': 'unavailable', 'reason': 'episode_missing', 'message': f'已匹配《{detail["title"]}》，但来源目录暂未列出第 {episode_number} 集。'}
-        raw = self._get(f'/vod/{source_id}/{episode_number}', json_result=True)
+        raw = self._get(f'/vod/{source_id}/{target_sort}', json_result=True)
         try:
             if not isinstance(raw, list) or len(raw) > LIMIT or any(type(n) is not int or not 0 <= n <= 255 for n in raw):
                 raise ValueError('not a byte array')
             rows = messages(bytes(raw))
-            names = {title_key(value) for value in [detail['title'], *detail.get('titles', [])]}
-            target_season = season_number(detail['title'])
-            single_feature = available == {1} and detail.get('episodes_total') == 1 and episode_number == 1
+            names, season_bases = self._allowed_vod_titles(detail, anime, target_season)
+            accepted_episodes = {episode_number, target_sort}
+            single_feature = len(available_set) == 1 and target_sort in available_set and detail.get('episodes_total') == 1 and episode_number == 1
             lines = {}
             rejected = 0
             for row in rows:
@@ -256,13 +304,17 @@ class AniChSource:
                     title_key(feature_label) in {'正片', '全集', '全片', '完整版', '全1集'} or
                     title_key(feature_label) in names
                 )
-                if candidate_episode != episode_number and not zero_feature:
+                if candidate_episode not in accepted_episodes and not zero_feature:
                     rejected += 1
                     continue
                 description = text(row, 6)
                 title = description.split('·', 1)[0].strip()
                 candidate_season = season_number(title)
-                if (candidate_season and candidate_season > 1 and candidate_season != target_season) or ((title or zero_feature) and title_key(title) not in names):
+                title_ok = title_key(title) in names or (
+                    bool(target_season and target_season > 1 and candidate_season == target_season)
+                    and title_key(strip_season(title)) in season_bases
+                )
+                if (candidate_season and candidate_season > 1 and candidate_season != target_season) or ((title or zero_feature) and not title_ok):
                     rejected += 1
                     continue
                 try:

@@ -1,4 +1,6 @@
 """Provider-scoped choices with automatic fallback, without caching signed URLs."""
+import inspect
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from source_errors import SourceError
@@ -51,7 +53,8 @@ def create_playback_router(provider, current_session, require_session, fallback_
             kind = "automatic"
         try:
             selected.validate_binding(anime, saved_id)
-            return {**selected.resolve(saved_id, episode, line_id), "match_kind": kind}
+            extra = {"anime": anime} if "anime" in inspect.signature(selected.resolve).parameters else {}
+            return {**selected.resolve(saved_id, episode, line_id, **extra), "match_kind": kind}
         except SourceError as error:
             if kind == "automatic" and error.status_code in {404, 409} and line_id is None:
                 store.forget_auto_source(key)
@@ -76,11 +79,22 @@ def create_playback_router(provider, current_session, require_session, fallback_
             order.remove(selected)
             order.insert(0, selected)
         results, errors = [], []
+        enriched = False
         for item in order:
             try:
                 result = resolve(item, anime, request, episode,
                                  source_anime_id if item is selected else None,
                                  line_id if item is selected else None)
+                if not enriched and not anime.get("detailComplete") and (
+                    result["status"] == "unavailable" and result.get("reason") == "unverified_resources"
+                ):
+                    enriched = True
+                    refreshed = request.app.state.catalog.get(anime_id, enrich=True)
+                    if refreshed.get("detailComplete") or refreshed.get("aliases") != anime.get("aliases"):
+                        anime = refreshed
+                        result = resolve(item, anime, request, episode,
+                                         source_anime_id if item is selected else None,
+                                         line_id if item is selected else None)
                 if result["status"] == "ready":
                     if item is not order[0]:
                         result["fallback_from"] = order[0].name

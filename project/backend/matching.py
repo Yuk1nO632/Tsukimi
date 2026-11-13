@@ -52,16 +52,30 @@ def search_keyword(value):
     return keyword
 
 
+def anime_titles(anime):
+    """Return non-empty display, original, and alias titles for a catalog entry."""
+    raw = [anime.get("title") or "", anime.get("originalTitle") or "", *re.split(r"\s+/\s+", anime.get("aliases") or "")]
+    return [value.strip() for value in raw if isinstance(value, str) and value.strip()]
+
+
+def strip_season(value):
+    """Remove trailing season/part markers while keeping distinct subtitles intact."""
+    text = unicodedata.normalize("NFKC", str(value)).strip()
+    text = re.sub(
+        r"\s*(?:第\s*[一二三四五六七八九十0-9]+\s*(?:季|期|部(?!分))|"
+        r"(?:season|part)\s*\d+|\d+(?:st|nd|rd|th)\s*season)\s*$",
+        "", text, flags=re.I,
+    ).strip()
+    return re.sub(
+        r"(?:(?<=\S)\s+|(?<=[\u3040-\u30ff\u3400-\u9fff]))(?:VIII|VII|III|VI|IV|II|IX|V|X)\s*$",
+        "", text, flags=re.I,
+    ).strip()
+
+
 def discovery_queries(anime):
-    names = [
-        anime.get("title", ""), anime.get("originalTitle", ""),
-        *re.split(r"\s+/\s+", anime.get("aliases", "")),
-    ]
     queries = []
-    for name in names:
-        if not name:
-            continue
-        for query in (name.strip()[:80], fallback_search_title(name)[:80]):
+    for name in anime_titles(anime):
+        for query in (name[:80], fallback_search_title(name)[:80]):
             keyword = search_keyword(query)
             if keyword and keyword not in queries:
                 queries.append(keyword)
