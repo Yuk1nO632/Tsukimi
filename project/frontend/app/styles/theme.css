@@ -945,7 +945,7 @@ summary:focus-visible {
 .series-episode-grid {
   gap: 11px;
 }
-.series-episode-grid > a {
+.series-episode-grid > :is(a, .episode-pending) {
   border-color: #e9e4ed;
   border-radius: 9px;
   background: white;
@@ -1033,7 +1033,7 @@ summary:focus-visible {
   border-color: #e5dcea;
   color: #80708d;
 }
-.episode-selector > a {
+.episode-selector > :is(a, .episode-pending) {
   border-radius: 8px;
   background: #f4f1f7;
   color: #887694;
@@ -1559,7 +1559,7 @@ summary:focus-visible {
   .series-episode-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .series-episode-grid > a {
+  .series-episode-grid > :is(a, .episode-pending) {
     font-size: 11px;
     padding: 12px 9px;
   }

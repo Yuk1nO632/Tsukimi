@@ -54,7 +54,7 @@
   background: var(--soft); border-color: var(--line); color: var(--ink);
 }
 :root[data-theme="dark"] :is(.outline-button,.favorite-button,.pagination button,.ranking-empty button,.line-probe-actions button,.collection-status button) { background: var(--surface); border-color: var(--line); color: var(--ink); }
-:root[data-theme="dark"] :is(.portal-tabs,.collection-summary,.watch-source-panel,.watch-source-panel.needs-source,.detail-cache-note,.channel-season-pill,.calendar-empty,.catalog-toolbar,.account-message,.account-import,.account-role,.detail-tags span,.detail-tags>a,.watch-tags>span,.episode-link,.series-episode-grid>a,.episode-selector>a,.home-category-links a,.search-suggest-all,.collection-status) {
+:root[data-theme="dark"] :is(.portal-tabs,.collection-summary,.watch-source-panel,.watch-source-panel.needs-source,.detail-cache-note,.channel-season-pill,.calendar-empty,.catalog-toolbar,.account-message,.account-import,.account-role,.detail-tags span,.detail-tags>a,.watch-tags>span,.episode-link,.series-episode-grid>:is(a,.episode-pending),.episode-selector>:is(a,.episode-pending),.home-category-links a,.search-suggest-all,.collection-status) {
   background: var(--soft); border-color: var(--line); color: var(--muted);
 }
 :root[data-theme="dark"] :is(.portal-tabs>button[aria-pressed="true"],.episode-selector>a[aria-current="page"],.favorite-button[aria-pressed="true"],.search-suggest-option:hover,.search-suggest-option[aria-selected="true"],.source-results>button:hover,.source-results>button[aria-pressed="true"],.season-ranking-list a:hover,.series-episode-grid>a:hover) {
@@ -75,4 +75,23 @@
 :root[data-theme="dark"] :is(h1,h2,h3,h4,.continue-copy strong) { color: var(--ink); }
 @media (max-width: 700px) {
   .site-header .header-inner .header-search { order: 5; width: 100%; flex-basis: 100%; }
+}
+
+.series-episode-grid > .episode-pending,
+.episode-selector > .episode-pending {
+  opacity: 0.55;
+  cursor: default;
+}
+.episode-pending small {
+  font-size: inherit;
+  white-space: nowrap;
+}
+.series-actions > button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.episode-selector-heading > span {
+  text-align: right;
+  max-width: 70%;
+  line-height: 1.6;
 }

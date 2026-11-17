@@ -1,5 +1,5 @@
 """Fixed Bangumi endpoints; normalized metadata shared by search, detail and playback."""
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import re
 from threading import Lock
@@ -68,6 +68,70 @@ def normalize(subject):
         "staff": [{"label": key, "value": infobox[key]} for key in ("导演", "动画制作", "原作", "系列构成", "人物设定", "音乐", "放送星期", "播放结束") if infobox.get(key)],
         "sourceUrl": f"https://bgm.tv/subject/{identifier}", "sourceName": "Bangumi",
         "detailComplete": bool(subject.get("infobox")),
+    }
+
+
+def episode_date(value):
+    if not isinstance(value, str):
+        return None
+    value = value.replace("年", "-").replace("月", "-").removesuffix("日")
+    if re.fullmatch(r"\d{4}-\d{1,2}-\d{1,2}", value) is None:
+        return None
+    try:
+        return date(*map(int, value.split("-")))
+    except ValueError:
+        return None
+
+
+def airing_info(anime, episodes, today=None):
+    today = today or datetime.now(SHANGHAI).date()
+    dates = {}
+    for episode in episodes:
+        if not isinstance(episode, dict) or episode.get("type") != 0:
+            continue
+        # Bangumi ep is relative to this subject. sort may continue a previous season.
+        number = episode.get("ep", episode.get("sort"))
+        if type(number) not in (int, float) or not 1 <= number <= 10000 or int(number) != number:
+            continue
+        number = int(number)
+        airdate = episode_date(episode.get("airdate"))
+        if number in dates and dates[number] != airdate:
+            airdate = None
+        dates[number] = airdate
+    aired = [number for number, airdate in dates.items() if airdate and airdate <= today]
+    future = [number for number, airdate in dates.items() if airdate and airdate > today]
+    total = anime.get("episodes") or 0
+    complete = total > 0 and set(dates) == set(aired) == set(range(1, total + 1))
+    end = episode_date(next(
+        (item.get("value") for item in anime.get("staff", []) if item.get("label") == "播放结束"),
+        "",
+    ))
+    # The subject's planned count can include a separately classified OVA.
+    complete = complete or bool(end and end <= today and aired and not future)
+    release = episode_date(anime.get("releaseDate"))
+    status = "unknown"
+    if complete:
+        status = "completed"
+    elif aired and future:
+        status = "airing"
+    elif not aired and (
+        (release and release > today)
+        or (dates.get(1) and dates[1] > today and len(future) == len(dates))
+    ):
+        status = "upcoming"
+    return {
+        "status": status,
+        "airedCount": len(aired),
+        "latestEpisode": max(aired, default=0),
+        "episodes": [
+            {
+                "number": number,
+                "airdate": airdate.isoformat() if airdate else "",
+                "status": "unknown" if airdate is None else "aired" if airdate <= today else "upcoming",
+            }
+            for number, airdate in sorted(dates.items())
+        ],
+        "asOf": today.isoformat(),
     }
 
 
@@ -141,6 +205,36 @@ class Catalog:
                 return {**cached[0], "detailWarning": "资料服务暂不可用，当前展示已缓存资料。"}
             raise
 
+    def detail(self, anime_id):
+        anime = self.get(anime_id, enrich=True)
+        episodes = []
+        try:
+            offset = 0
+            while True:
+                raw = self.provider.request("GET", f"/v0/episodes?subject_id={anime_id[4:]}&type=0&limit=200&offset={offset}")
+                if (not isinstance(raw, dict) or not isinstance(raw.get("data"), list)
+                        or type(raw.get("total")) is not int or not 0 <= raw["total"] <= 10000):
+                    raise CatalogError("分集放送资料暂时不可用。")
+                items = raw["data"]
+                if len(items) > 200 or offset + len(items) > raw["total"]:
+                    raise CatalogError("分集放送资料格式暂时不可用。")
+                episodes.extend(items)
+                offset += len(items)
+                if offset >= raw["total"]:
+                    break
+                if not items:
+                    raise CatalogError("分集放送资料尚未完整取得。")
+            return {**anime, "airing": airing_info(anime, episodes)}
+        except CatalogError:
+            # A schedule failure must leave metadata and existing playback entry points usable.
+            return {
+                **anime,
+                "airing": {
+                    **airing_info(anime, []),
+                    "warning": "放送进度暂时无法确认，请稍后刷新。",
+                },
+            }
+
     def search(self, q, year, season, genre, sort, page, limit):
         filters = {"type": [2], "nsfw": False}
         if season and not year:
@@ -209,6 +303,7 @@ def create_catalog_router():
     @router.get("/{anime_id}")
     def detail(anime_id: str, request: Request, summary: bool = False):
         # Route rendering uses cached search/detail data; full enrichment is separate.
-        return request.app.state.catalog.get(anime_id, enrich=not summary)
+        catalog = request.app.state.catalog
+        return catalog.get(anime_id) if summary else catalog.detail(anime_id)
 
     return router

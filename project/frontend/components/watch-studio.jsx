@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { animeList } from "../lib/anime";
 import { readPlayback, rememberSource } from "../lib/playback-api";
 import useWatchProgress from "../lib/use-watch-progress";
+import useApi from "../lib/use-api";
+import { airingSummary, episodeSchedule } from "../lib/airing";
 import { progressUrl } from "./continue-watching";
 import { useAccount } from "./account-provider";
 import FavoriteButton from "./favorite-button";
@@ -22,6 +24,8 @@ export default function WatchStudio({
   selectedLineId,
 }) {
   const account = useAccount();
+  const { data: detail } = useApi(`/api/catalog/${anime.id}`);
+  const airingAnime = detail || anime;
   const [wide, setWide] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [testMode, setTestMode] = useState(false);
@@ -185,10 +189,20 @@ export default function WatchStudio({
             ? "已记住选择"
             : "已匹配"
         : matched ? source.lines?.length ? "已匹配 · 请换线路" : "已匹配 · 暂无线路" : "需要选择来源";
-  const episodeCount =
-    anime.episodes || source.episode_count || selectedEpisode;
+  const schedule = episodeSchedule(
+    airingAnime,
+    Math.max(source.episode_count || 0, selectedEpisode),
+  );
+  const previousEpisode = schedule[selectedEpisode - 2];
+  const previousHref =
+    previousEpisode && previousEpisode.status !== "upcoming"
+      ? episodeUrl(selectedEpisode - 1)
+      : null;
+  const nextEpisode = schedule[selectedEpisode];
   const nextHref =
-    selectedEpisode < episodeCount ? episodeUrl(selectedEpisode + 1) : null;
+    nextEpisode && nextEpisode.status !== "upcoming"
+      ? episodeUrl(selectedEpisode + 1)
+      : null;
 
   return (
     <div className="watch-page content-shell">
@@ -248,12 +262,8 @@ export default function WatchStudio({
             </button>
           </div>
           <div className="watch-episode-navigation">
-            {selectedEpisode > 1 ? (
-              <Link
-                prefetch={false}
-                scroll={false}
-                href={episodeUrl(selectedEpisode - 1)}
-              >
+            {previousHref ? (
+              <Link prefetch={false} scroll={false} href={previousHref}>
                 ← 上一集
               </Link>
             ) : (
@@ -262,7 +272,10 @@ export default function WatchStudio({
               </button>
             )}
             <span>
-              第 {selectedEpisode} 集 / 全 {episodeCount} 集
+              第 {selectedEpisode} 集 /{" "}
+              {airingAnime.episodes > 0
+                ? `共 ${airingAnime.episodes} 集`
+                : "总集数待定"}
             </span>
             {nextHref ? (
               <Link
@@ -275,7 +288,9 @@ export default function WatchStudio({
               </Link>
             ) : (
               <button type="button" disabled>
-                已是最后一集
+                {nextEpisode?.status === "upcoming"
+                  ? "下一集未播出"
+                  : "已是最后一集"}
               </button>
             )}
           </div>
@@ -454,31 +469,51 @@ export default function WatchStudio({
           >
             <div className="episode-selector-heading">
               <h2 id="episodes-title">选集</h2>
-              <span>全 {episodeCount} 集</span>
+              <span>{airingSummary(airingAnime)}</span>
             </div>
             <div className="episode-selector" aria-label="选集列表">
-              {Array.from({ length: episodeCount }, (_, index) => (
-                <Link
-                  prefetch={false}
-                  key={index + 1}
-                  scroll={false}
-                  href={episodeUrl(index + 1)}
-                  aria-current={
-                    selectedEpisode === index + 1 ? "page" : undefined
-                  }
-                  aria-label={`选择第 ${index + 1} 集`}
-                >
-                  {String(index + 1).padStart(2, "0")}
-                  {selectedEpisode === index + 1 && (
-                    <span className="episode-playing" aria-hidden="true">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                  )}
-                </Link>
-              ))}
+              {schedule.map((episode) =>
+                episode.status === "upcoming" ? (
+                  <span
+                    key={episode.number}
+                    className="episode-pending"
+                    aria-disabled="true"
+                    aria-label={`第 ${episode.number} 集未播出`}
+                    title={
+                      episode.airdate
+                        ? `预计 ${episode.airdate} 播出`
+                        : "播出日期待定"
+                    }
+                  >
+                    {String(episode.number).padStart(2, "0")}
+                  </span>
+                ) : (
+                  <Link
+                    prefetch={false}
+                    key={episode.number}
+                    scroll={false}
+                    href={episodeUrl(episode.number)}
+                    aria-current={
+                      selectedEpisode === episode.number ? "page" : undefined
+                    }
+                    aria-label={`选择第 ${episode.number} 集${episode.status === "unknown" ? "，放送进度待确认" : ""}`}
+                  >
+                    {String(episode.number).padStart(2, "0")}
+                    {selectedEpisode === episode.number && (
+                      <span className="episode-playing" aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    )}
+                  </Link>
+                ),
+              )}
             </div>
+            <p className="series-resource-note">
+              {airingAnime.airing?.warning ||
+                "放送进度按 Bangumi 分集日期标注，实际资源以播放来源为准。"}
+            </p>
           </section>
         </aside>
       </div>
@@ -500,7 +535,7 @@ export default function WatchStudio({
             {anime.tags?.map((tag) => (
               <span key={tag}>{tag}</span>
             ))}
-            <span>全 {episodeCount} 集</span>
+            <span>{airingSummary(airingAnime)}</span>
           </div>
           <p className={`watch-synopsis${expanded ? " is-expanded" : ""}`}>
             {anime.synopsis || anime.description}

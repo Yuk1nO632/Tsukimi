@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { useState } from "react";
 import useApi from "../lib/use-api";
+import { airingSummary, episodeSchedule } from "../lib/airing";
 import ContinueWatching from "./continue-watching";
 import FavoriteButton from "./favorite-button";
 import { CollectionStatusPicker } from "./collection-provider";
@@ -16,7 +17,10 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
   const [group, setGroup] = useState(0);
   const [expanded, setExpanded] = useState(false);
 
-  const count = anime.episodes || 1;
+  const schedule = episodeSchedule(anime);
+  const count = schedule.length;
+  const selectedGroup = Math.min(group, Math.max(0, Math.ceil(count / 50) - 1));
+  const upcoming = schedule[0]?.status === "upcoming";
   function watch(episode = 1) {
     return `/watch/${anime.id}?episode=${episode}${initialSource ? `&provider=anich&source=${initialSource}` : ""}`;
   }
@@ -59,7 +63,7 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
           <div className="series-meta-line">
             <span>{anime.platform || "动画"}</span>
             <span>{anime.year || "年份待定"}</span>
-            <span>{anime.episodes ? `${anime.episodes} 集` : "集数待定"}</span>
+            <span>{airingSummary(anime)}</span>
           </div>
           <h1 id="series-title">{anime.title}</h1>
           <p className="series-original">{anime.originalTitle}</p>
@@ -76,9 +80,15 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
           </div>
           <p className="series-description">{anime.description}</p>
           <div className="series-actions">
-            <Link prefetch={false} className="solid-button" href={watch()}>
-              前往播放 →
-            </Link>
+            {upcoming ? (
+              <button type="button" className="solid-button" disabled>
+                尚未开播
+              </button>
+            ) : (
+              <Link prefetch={false} className="solid-button" href={watch()}>
+                前往播放 →
+              </Link>
+            )}
             <ContinueWatching animeId={anime.id} />
             <CollectionStatusPicker anime={anime} />
             <FavoriteButton animeId={anime.id} title={anime.title} />
@@ -121,16 +131,12 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
             <div className="portal-section-heading">
               <div>
                 <h2 id="series-episodes">剧集</h2>
-                <span>
-                  {anime.episodes
-                    ? `全 ${anime.episodes} 集`
-                    : "资料尚未确认总集数"}
-                </span>
+                <span>{airingSummary(anime)}</span>
               </div>
               {count > 50 && (
                 <select
                   aria-label="剧集范围"
-                  value={group}
+                  value={selectedGroup}
                   onChange={(event) => setGroup(Number(event.target.value))}
                 >
                   {Array.from({ length: Math.ceil(count / 50) }, (_, i) => (
@@ -142,17 +148,49 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
               )}
             </div>
             <div className="series-episode-grid">
-              {Array.from(
-                { length: Math.max(0, Math.min(50, count - group * 50)) },
-                (_, i) => group * 50 + i + 1,
-              ).map((episode) => (
-                <Link prefetch={false} key={episode} href={watch(episode)}>
-                  第 {String(episode).padStart(2, "0")} 集<span>▷</span>
-                </Link>
-              ))}
+              {schedule
+                .slice(selectedGroup * 50, (selectedGroup + 1) * 50)
+                .map((episode) =>
+                  episode.status === "upcoming" ? (
+                    <span
+                      key={episode.number}
+                      className="episode-pending"
+                      aria-disabled="true"
+                      title={
+                        episode.airdate
+                          ? `预计 ${episode.airdate} 播出`
+                          : "播出日期待定"
+                      }
+                    >
+                      第 {String(episode.number).padStart(2, "0")} 集
+                      <small>未播出</small>
+                    </span>
+                  ) : (
+                    <Link
+                      prefetch={false}
+                      key={episode.number}
+                      href={watch(episode.number)}
+                    >
+                      第 {String(episode.number).padStart(2, "0")} 集
+                      <span>
+                        {episode.status === "unknown" ? "待确认" : "▷"}
+                      </span>
+                    </Link>
+                  ),
+                )}
             </div>
             <p className="series-resource-note">
-              集数来自番剧资料。实际可播集数与线路以匹配后的来源为准。
+              放送进度按 Bangumi
+              分集日期（北京时间）标注，实际资源更新以播放来源为准。
+              {anime.airing?.warning && (
+                <>
+                  {" "}
+                  {anime.airing.warning}{" "}
+                  <button className="text-button" type="button" onClick={retry}>
+                    重新获取进度
+                  </button>
+                </>
+              )}
             </p>
           </section>
           <section

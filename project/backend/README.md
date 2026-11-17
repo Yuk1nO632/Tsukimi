@@ -47,7 +47,7 @@ python3 -m venv .venv
 | GET | `/api/health` | 检查后端响应 |
 | GET | `/api/catalog` | 搜索、筛选、排序和分页 |
 | GET | `/api/catalog/calendar` | 获取当前放送计划 |
-| GET | `/api/catalog/{anime_id}` | 获取详情，`summary=true` 可读取已有摘要 |
+| GET | `/api/catalog/{anime_id}` | 获取详情及分集放送进度，`summary=true` 可读取已有摘要 |
 | GET | `/api/account` | 读取账号状态、建立匿名会话并返回 scope |
 | POST | `/api/account/register`、`/api/account/login`、`/api/account/logout` | 注册、登录与退出 |
 | POST | `/api/account/recovery`、`/api/account/reset-password` | 获取密保挑战与重置密码 |
@@ -84,6 +84,8 @@ SQLite 保存会话、账号、片单、进度、来源偏好及资料缓存。�
 资料 ID 使用 Bangumi 标识，播放作品与线路编号分别归属所选来源。AniCh 与稀饭的编号通过来源标记隔离，自动匹配会核对作品身份，页面提供人工校正入口。解析过程支持备用来源补位和用户优先级选择。
 
 后端返回候选线路与临时媒体地址，播放器直接连接 CDN。资料缓存、账号偏好和观看进度分别保存，签名播放地址按播放请求重新解析。实际来源与线路可用性由外部服务响应决定。
+
+详情中的 `airing` 包含 `status`（`airing`、`completed`、`upcoming`、`unknown`）、`airedCount`、`latestEpisode`、逐集日期与状态，以及北京时间日期 `asOf`。分集请求按本篇类型分页查询，复用 10 分钟上游缓存，每次响应重新按当前日期计算状态。资料缺失或查询失败时展示待确认，失败响应另含 `warning`。完结状态由完整分集日期或明确的播放结束日期确认。实际播放资源以所选来源为准。[Bangumi 分集字段](https://github.com/bangumi/api/blob/master/open-api/v0.yaml)
 
 ## 测试与工具
 

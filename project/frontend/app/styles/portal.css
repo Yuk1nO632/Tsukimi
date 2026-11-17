@@ -975,7 +975,7 @@ summary:focus-visible {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
-.series-episode-grid > a {
+.series-episode-grid > :is(a, .episode-pending) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1760,7 +1760,7 @@ summary:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 9px;
   }
-  .series-episode-grid > a {
+  .series-episode-grid > :is(a, .episode-pending) {
     font-size: 10px;
     padding: 11px 9px;
   }

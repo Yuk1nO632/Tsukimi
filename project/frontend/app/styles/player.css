@@ -925,7 +925,7 @@
   padding: 2px;
   scrollbar-width: thin;
 }
-.episode-selector>a {
+.episode-selector>:is(a, .episode-pending) {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1362,7 +1362,7 @@
     gap: 7px;
     max-height: 250px;
   }
-  .episode-selector>a {
+  .episode-selector>:is(a, .episode-pending) {
     min-height: 37px;
     font-size: 12px;
   }
@@ -1459,7 +1459,7 @@
   }
 }
 @media(prefers-reduced-motion:reduce) {
-  .player-controls,.player-topline,.player-center-play,.episode-selector>a {
+  .player-controls,.player-topline,.player-center-play,.episode-selector>:is(a, .episode-pending) {
     transition: none;
   }
   .loading-dot,.player-empty-icon.is-loading svg {
