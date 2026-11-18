@@ -3,6 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { featuredArtwork } from "../lib/featured-artwork";
+
+function splitTitle(title, subtitleStart) {
+  const index = subtitleStart ? title.indexOf(subtitleStart) : -1;
+  if (index <= 0) return { title, subtitle: null };
+  return { title: title.slice(0, index).trim(), subtitle: title.slice(index) };
+}
 
 export default function FeaturedHero({ items = [], seasonLabel = "本季新番" }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -10,7 +17,7 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
   const [pageVisible, setPageVisible] = useState(true);
   const [hovered, setHovered] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
-  const [failedCover, setFailedCover] = useState(null);
+  const [failedArtwork, setFailedArtwork] = useState(null);
   const currentIndex = items.length ? activeIndex % items.length : 0;
   const active = items[currentIndex];
 
@@ -38,10 +45,10 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
   }, [activeIndex, reducedMotion, pageVisible, hovered, focusWithin, items.length]);
 
   if (!active) return null;
-  const wideCover = active.cover.replace(
-    /^https:\/\/lain\.bgm\.tv\/r\/400\/pic\/cover\/l\//,
-    "https://lain.bgm.tv/r/1200/pic/cover/l/",
-  );
+  const artwork = featuredArtwork[active.id];
+  const showArtwork = artwork && failedArtwork !== active.id;
+  const { title, subtitle } = splitTitle(active.title, artwork?.subtitleStart);
+  const compactTitle = subtitle || [...title].length > 18;
   function move(offset) {
     setActiveIndex(
       (previous) => (previous + offset + items.length) % items.length,
@@ -62,26 +69,34 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
         }
       }}
     >
-      <picture className="featured-art" aria-hidden="true" key={active.id}>
-        {wideCover !== active.cover && failedCover !== wideCover && (
-          <source media="(min-width: 701px)" srcSet={wideCover} />
-        )}
+      <div
+        className={`featured-art${showArtwork ? "" : " is-poster"}`}
+        aria-hidden="true"
+        key={active.id}
+      >
         <Image
-          src={active.cover}
+          src={showArtwork ? `/featured/${active.id}.webp` : active.cover}
           alt=""
           fill
           loading="eager"
           fetchPriority="high"
           sizes="(max-width: 700px) 100vw, 70vw"
-          onError={(event) => {
-            if (event.currentTarget.currentSrc === wideCover) setFailedCover(wideCover);
+          onError={() => {
+            if (showArtwork) setFailedArtwork(active.id);
           }}
         />
-      </picture>
+      </div>
       <div className="featured-intro content-shell">
         <div className="featured-copy" aria-live="off">
           <p className="featured-season">{seasonLabel}</p>
-          <h1>{active.title}</h1>
+          <h1
+            className={compactTitle ? "featured-title is-compact" : "featured-title"}
+            aria-label={active.title}
+            title={active.title}
+          >
+            <span className="featured-title-main">{title}</span>
+            {subtitle && <span className="featured-title-subtitle">{subtitle}</span>}
+          </h1>
           <div className="featured-facts">
             {active.releaseDate && <span>{active.releaseDate} 首播</span>}
             {active.category && <span>{active.category}</span>}
@@ -96,8 +111,13 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
               查看番剧 <span aria-hidden="true">↗</span>
             </Link>
             <a href={active.sourceUrl} target="_blank" rel="noreferrer">
-              资料与海报 · Bangumi ↗
+              {showArtwork ? "Bangumi 资料 ↗" : "资料与海报 · Bangumi ↗"}
             </a>
+            {showArtwork && (
+              <a href={artwork.source} target="_blank" rel="noreferrer">
+                剧照来源 ↗
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -163,23 +183,28 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
             </button>
           </div>
           <div className="featured-choices" role="group" aria-label="切换当季新番">
-            {items.map((anime, index) => (
-              <button
-                key={anime.id}
-                className="featured-choice"
-                type="button"
-                aria-pressed={index === currentIndex}
-                onClick={() => setActiveIndex(index)}
-              >
-                <Image
-                  src={anime.cover}
-                  alt=""
-                  fill
-                  sizes="(max-width: 700px) 32vw, 210px"
-                />
-                <span>{anime.title}</span>
-              </button>
-            ))}
+            {items.map((anime, index) => {
+              const previewArtwork = featuredArtwork[anime.id];
+              const { title } = splitTitle(anime.title, previewArtwork?.subtitleStart);
+              return (
+                <button
+                  key={anime.id}
+                  className={`featured-choice${previewArtwork ? "" : " is-poster"}`}
+                  type="button"
+                  aria-label={anime.title}
+                  aria-pressed={index === currentIndex}
+                  onClick={() => setActiveIndex(index)}
+                >
+                  <Image
+                    src={previewArtwork ? `/featured/${anime.id}-thumb.webp` : anime.cover}
+                    alt=""
+                    fill
+                    sizes="(max-width: 700px) 32vw, 210px"
+                  />
+                  <span>{title}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
