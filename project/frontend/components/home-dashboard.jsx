@@ -39,27 +39,17 @@ export default function HomeDashboard() {
   ];
   return (
     <>
-      <div className="channel-heading content-shell">
-        <div>
-          <h2>番剧频道</h2>
-          <span>新番 · 榜单 · 放送安排</span>
-        </div>
-        <span className="channel-season-pill">
-          <i aria-hidden="true" />
-          {year} · {seasonNames[season - 1]}新番
-        </span>
-      </div>
-      <div className="home-feature-layout content-shell">
+      <div className="home-feature">
         {loading ? (
-          <div className="home-hero-loading" role="status">
+          <div className="home-hero-loading content-shell" role="status">
             正在加载 {year} 年 {season * 3 - 2} 月新番…
           </div>
         ) : error ? (
-          <div className="home-hero-loading">
+          <div className="home-hero-loading content-shell">
             <LoadFailure error={error} retry={retry} />
           </div>
         ) : !seasonItems.length ? (
-          <div className="home-hero-loading home-hero-empty">
+          <div className="home-hero-loading content-shell home-hero-empty">
             <h3>本季番剧资料暂未收录</h3>
             <Link prefetch={false} className="outline-button" href="/browse">
               浏览番剧索引 →
@@ -68,35 +58,11 @@ export default function HomeDashboard() {
         ) : (
           <FeaturedHero
             items={seasonItems.slice(0, 6)}
-            seasonLabel={`${year} · ${season * 3 - 2}月新番`}
+            seasonLabel={`${year} · ${seasonNames[season - 1]}新番`}
           />
         )}
-        <HomeSeasonRanking
-          items={seasonItems}
-          loading={loading}
-          error={error}
-          retry={retry}
-          seasonUrl={seasonUrl}
-        />
       </div>
       <div className="content-shell home-portal">
-        <nav className="home-category-nav" aria-label="番剧类型快捷浏览">
-          <strong>分类浏览</strong>
-          <div className="home-category-links">
-            {genres.map((genre) => (
-              <Link
-                prefetch={false}
-                key={genre}
-                href={`/browse?${new URLSearchParams({ genre, sort: "heat" })}`}
-              >
-                {genre}
-              </Link>
-            ))}
-          </div>
-          <Link prefetch={false} href="/browse">
-            全部分类 ↗
-          </Link>
-        </nav>
         <nav className="home-shortcuts" aria-label="频道入口">
           <Link prefetch={false} href={seasonUrl}>
             <strong>本季新番</strong>
@@ -122,7 +88,31 @@ export default function HomeDashboard() {
             </span>
           </Link>
         </nav>
+        <nav className="home-category-nav" aria-label="番剧类型快捷浏览">
+          <strong>分类浏览</strong>
+          <div className="home-category-links">
+            {genres.map((genre) => (
+              <Link
+                prefetch={false}
+                key={genre}
+                href={`/browse?${new URLSearchParams({ genre, sort: "heat" })}`}
+              >
+                {genre}
+              </Link>
+            ))}
+          </div>
+          <Link prefetch={false} href="/browse">
+            全部分类 ↗
+          </Link>
+        </nav>
         <ContinueWatching />
+        <HomeSeasonRanking
+          items={seasonItems}
+          loading={loading}
+          error={error}
+          retry={retry}
+          seasonUrl={seasonUrl}
+        />
         <HomeSpotlight items={spotlightItems} />
         <section className="home-section" aria-labelledby="home-season-title">
           <div className="portal-section-heading">
