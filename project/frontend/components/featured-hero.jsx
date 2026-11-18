@@ -2,14 +2,16 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function FeaturedHero({ items = [], seasonLabel = "本季新番" }) {
-  const tabsRef = useRef(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(true);
   const [pageVisible, setPageVisible] = useState(true);
-  const active = items[activeIndex % items.length];
+  const [hovered, setHovered] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  const currentIndex = items.length ? activeIndex % items.length : 0;
+  const active = items[currentIndex];
 
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -26,28 +28,13 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
   }, []);
 
   useEffect(() => {
-    if (reducedMotion || !pageVisible || items.length < 2) return;
+    if (reducedMotion || !pageVisible || hovered || focusWithin || items.length < 2)
+      return;
     const timer = window.setTimeout(() => {
       setActiveIndex((previous) => (previous + 1) % items.length);
     }, 6500);
     return () => window.clearTimeout(timer);
-  }, [activeIndex, reducedMotion, pageVisible, items.length]);
-
-  useEffect(() => {
-    const rail = tabsRef.current;
-    const button = rail?.children[activeIndex % items.length];
-    if (!button) return;
-    const revealSelection = () => rail.scrollTo({
-      left: button.offsetLeft - (rail.clientWidth - button.offsetWidth) / 2,
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "instant"
-        : "smooth",
-    });
-    revealSelection();
-    const observer = new ResizeObserver(revealSelection);
-    observer.observe(rail);
-    return () => observer.disconnect();
-  }, [activeIndex, items.length]);
+  }, [activeIndex, reducedMotion, pageVisible, hovered, focusWithin, items.length]);
 
   if (!active) return null;
   function move(offset) {
@@ -61,6 +48,14 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
       className="season-hero"
       aria-roledescription="轮播"
       aria-label="当季新番推荐"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocusWithin(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setFocusWithin(false);
+        }
+      }}
     >
       <div className="season-backdrop" aria-hidden="true" key={active.id}>
         <Image
@@ -126,102 +121,85 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
           />
         </Link>
       </div>
-      <div className="season-bottom content-shell">
-        <div
-          className="season-tabs"
-          ref={tabsRef}
-          role="group"
-          aria-label="切换当季新番"
-        >
-          {items.map((anime, index) => (
-            <button
-              key={anime.id}
-              className={`season-tab${index === activeIndex ? " is-active" : ""}`}
-              type="button"
-              aria-label={`推荐：${anime.title}`}
-              aria-pressed={index === activeIndex}
-              onClick={() => setActiveIndex(index)}
-            >
-              <span className="season-tab-cover">
-                <Image src={anime.cover} alt="" fill sizes="48px" />
-              </span>
-              <span className="season-tab-copy">
-                <small>推荐 {index + 1}</small>
-                <strong>{anime.title}</strong>
-              </span>
-              {index === activeIndex && <i aria-hidden="true">●</i>}
-            </button>
-          ))}
-        </div>
-        {items.length > 1 && (
-          <div className="season-controls">
-            <div
-              className="season-navigation"
-              role="group"
-              aria-label="推荐切换"
-            >
-              <span
-                className="season-position"
-                aria-label={`第 ${activeIndex + 1} 部，共 ${items.length} 部`}
+      {items.length > 1 && (
+        <div className="season-bottom content-shell">
+          <div className="season-tabs" role="group" aria-label="切换当季新番">
+            {items.map((anime, index) => (
+              <button
+                key={anime.id}
+                className={`season-tab${index === currentIndex ? " is-active" : ""}`}
+                type="button"
+                aria-pressed={index === currentIndex}
+                onClick={() => setActiveIndex(index)}
               >
-                <b>{String(activeIndex + 1).padStart(2, "0")}</b>
-                <span aria-hidden="true">
-                  {" "}
-                  / {String(items.length).padStart(2, "0")}
+                <span className="season-tab-cover">
+                  <Image src={anime.cover} alt="" fill sizes="32px" />
                 </span>
-              </span>
-              <button
-                className="season-nav-button"
-                type="button"
-                onClick={() => move(-1)}
-                aria-label="上一部新番"
-                title="上一部新番"
-              >
-                <svg
-                  viewBox="0 0 20 20"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="m12 5-5 5 5 5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                上一部
+                <span className="season-tab-title">{anime.title}</span>
               </button>
-              <button
-                className="season-nav-button"
-                type="button"
-                onClick={() => move(1)}
-                aria-label="下一部新番"
-                title="下一部新番"
-              >
-                下一部
-                <svg
-                  viewBox="0 0 20 20"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="m8 5 5 5-5 5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            </div>
+            ))}
           </div>
-        )}
-      </div>
+          <div
+            className="season-navigation"
+            role="group"
+            aria-label="推荐切换"
+          >
+            <button
+              className="season-nav-button"
+              type="button"
+              onClick={() => move(-1)}
+              aria-label="上一部新番"
+              title="上一部新番"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                width="18"
+                height="18"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="m12 5-5 5 5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <span
+              className="season-position"
+              aria-label={`第 ${currentIndex + 1} 部，共 ${items.length} 部`}
+            >
+              <b>{currentIndex + 1}</b>
+              <span aria-hidden="true"> / {items.length}</span>
+            </span>
+            <button
+              className="season-nav-button"
+              type="button"
+              onClick={() => move(1)}
+              aria-label="下一部新番"
+              title="下一部新番"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                width="18"
+                height="18"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="m8 5 5 5-5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
