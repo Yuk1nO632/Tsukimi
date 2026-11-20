@@ -49,7 +49,8 @@
 :root[data-theme="dark"] :is(.account-card,.continue-card,.anime-card,.catalog-filter-panel,.calendar-board,.schedule-card,.portal-empty,.home-season-ranking,.home-category-nav,.home-collection-strip,.home-saved-list>a,.watch-sidebar,.watch-episode-navigation,.playback-help>div,.header-search-dropdown,.line-probe-list,.line-probe-list>button,.source-results>button,.genre-collection,.home-shortcuts>a,.home-hero-loading,.poster) {
   background: var(--surface); border-color: var(--line); color: var(--ink);
 }
-:root[data-theme="dark"] :is(.series-overview,.detail-overview) { background: linear-gradient(130deg,#242633,#24202e); border-color: var(--line); }
+:root[data-theme="dark"] .detail-overview { background: linear-gradient(130deg,#242633,#24202e); border-color: var(--line); }
+:root[data-theme="dark"] .series-overview { --series-ambient-opacity: .23; }
 :root[data-theme="dark"] :is(.header-search input,.account-form input,.catalog-query input,.catalog-selects select,.collection-tools input,.collection-tools select,.calendar-tools>input,.source-search-input,.source-line-label select,.collection-status-picker,.search-input-wrap input) {
   background: var(--soft); border-color: var(--line); color: var(--ink);
 }

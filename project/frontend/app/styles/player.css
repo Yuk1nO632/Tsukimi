@@ -191,11 +191,17 @@
   background: transparent;
   cursor: pointer;
   --seek-fill: 0%;
+  --buffer-track: linear-gradient(
+    to right,
+    #ffffff50 0 var(--buffer-start, 0%),
+    #ffffff94 var(--buffer-start, 0%) var(--buffer-end, 0%),
+    #ffffff50 var(--buffer-end, 0%) 100%
+  );
 }
 .seek-range::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 6px;
-  background: linear-gradient(to right,var(--pink) 0 var(--seek-fill),#ffffff50 var(--seek-fill) 100%);
+  background: linear-gradient(to right, var(--pink) 0 var(--seek-fill), transparent var(--seek-fill)), var(--buffer-track);
 }
 .seek-range::-webkit-slider-thumb {
   appearance: none;
@@ -209,7 +215,7 @@
 .seek-range::-moz-range-track {
   height: 3px;
   border-radius: 6px;
-  background: #ffffff50;
+  background: var(--buffer-track);
 }
 .seek-range::-moz-range-progress {
   height: 3px;
@@ -1480,4 +1486,145 @@
 }
 .seek-range:focus-visible::-moz-range-thumb {
   box-shadow: 0 0 0 4px #ffffff30;
+}
+
+.seek-time-preview {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, calc(-100% - 5px));
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: #1b1722;
+  color: #fff;
+  box-shadow: 0 2px 10px #0006;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.controls-hidden .seek-time-preview {
+  visibility: hidden;
+}
+.watch-page :is(.watch-sidebar, .watch-episode-navigation, .watch-episode-range, .watch-share) {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+.watch-page .watch-stage .watch-source-panel {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  margin-top: 18px;
+  padding: 0;
+  background: var(--soft);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.watch-page .watch-source-panel.needs-source {
+  border-color: color-mix(in srgb, var(--pink) 36%, var(--line));
+}
+.watch-source-panel > .source-panel-heading {
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: inherit;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+.watch-source-panel > .source-panel-heading::-webkit-details-marker {
+  display: none;
+}
+.watch-source-panel > .source-panel-heading::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-inline: 2px 1px;
+  border: solid var(--muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-2px) rotate(45deg);
+}
+.watch-source-panel[open] > .source-panel-heading::after {
+  transform: translateY(2px) rotate(225deg);
+}
+.source-panel-heading > span:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
+  min-width: 0;
+}
+.source-panel-heading small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.source-panel-heading .source-badge {
+  margin-inline-start: auto;
+  color: var(--muted);
+  font-weight: 500;
+}
+.watch-source-settings {
+  padding: 11px 12px 12px;
+  border-top: 1px solid var(--line);
+}
+.watch-episode-range {
+  min-height: 36px;
+  max-width: 100%;
+  margin-bottom: 9px;
+  border: 1px solid;
+  border-radius: 7px;
+  padding: 4px 7px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.watch-episodes-panel {
+  scroll-margin-top: 108px;
+}
+.watch-episode-navigation > a,
+.watch-mobile-tools button {
+  color: var(--ink);
+}
+.watch-episode-navigation .next-episode-link {
+  color: var(--blue);
+}
+.watch-mobile-tools {
+  display: none;
+}
+.watch-page :is(.watch-episodes-panel, .episode-selector a, .watch-episode-range, .watch-source-panel summary, .watch-episode-navigation a, .watch-mobile-tools button):focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  .watch-episode-navigation {
+    flex-wrap: wrap;
+  }
+  .watch-mobile-tools {
+    display: flex;
+    gap: 8px;
+    flex-basis: 100%;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+  }
+  .watch-mobile-tools button {
+    flex: 1;
+    min-height: 42px;
+    padding: 5px 8px;
+    background: var(--soft);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+}
+@media (max-width: 540px) {
+  .watch-episode-navigation > :is(a, button) {
+    min-height: 40px;
+  }
+  .watch-episodes-panel, .watch-page .watch-source-panel {
+    scroll-margin-top: 170px;
+  }
 }

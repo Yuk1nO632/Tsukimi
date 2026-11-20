@@ -9,6 +9,35 @@ import ContinueWatching from "./continue-watching";
 import FavoriteButton from "./favorite-button";
 import { CollectionStatusPicker } from "./collection-provider";
 
+function RatingDistribution({ distribution }) {
+  const votes = Array.from({ length: 10 }, (_, index) =>
+    Math.max(0, Number(distribution?.[index + 1]) || 0),
+  );
+  const peak = Math.max(...votes);
+  if (!peak) return null;
+  const total = votes.reduce((sum, count) => sum + count, 0);
+  return (
+    <details className="series-rating-distribution">
+      <summary>
+        <span className="series-rating-bars" aria-hidden="true">
+          {votes.map((count, index) => (
+            <i key={index} style={{ "--rating-height": (count / peak) * 100 + "%" }} />
+          ))}
+        </span>
+        评分分布
+      </summary>
+      <dl>
+        {votes.map((count, index) => (
+          <div key={index}>
+            <dt>{index + 1} 分</dt>
+            <dd>{(count / total * 100).toFixed(1)}%</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 export default function DetailView({ anime: initialAnime, initialSource }) {
   const { data, error, loading, retry } = useApi(
     `/api/catalog/${initialAnime.id}`,
@@ -21,6 +50,7 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
   const count = schedule.length;
   const selectedGroup = Math.min(group, Math.max(0, Math.ceil(count / 50) - 1));
   const upcoming = schedule[0]?.status === "upcoming";
+  const nextAiring = schedule.find((episode) => episode.status === "upcoming" && episode.airdate);
   function watch(episode = 1) {
     return `/watch/${anime.id}?episode=${episode}${initialSource ? `&provider=anich&source=${initialSource}` : ""}`;
   }
@@ -49,6 +79,9 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
         </p>
       )}
       <section className="series-overview" aria-labelledby="series-title">
+        <div className="series-ambient" aria-hidden="true">
+          <Image src={anime.cover} alt="" fill sizes="(max-width:540px) 140px, 220px" />
+        </div>
         <div className="series-cover">
           <Image
             src={anime.cover}
@@ -63,10 +96,12 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
           <div className="series-meta-line">
             <span>{anime.platform || "动画"}</span>
             <span>{anime.year || "年份待定"}</span>
-            <span>{airingSummary(anime)}</span>
           </div>
           <h1 id="series-title">{anime.title}</h1>
-          <p className="series-original">{anime.originalTitle}</p>
+          {anime.originalTitle && anime.originalTitle !== anime.title && (
+            <p className="series-original">{anime.originalTitle}</p>
+          )}
+          <p className="series-airing-status">{airingSummary(anime)}</p>
           <div className="detail-tags">
             {anime.tags?.slice(0, 8).map((tag) => (
               <Link
@@ -78,7 +113,6 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
               </Link>
             ))}
           </div>
-          <p className="series-description">{anime.description}</p>
           <div className="series-actions">
             {upcoming ? (
               <button type="button" className="solid-button" disabled>
@@ -105,6 +139,7 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
               ? `${anime.ratingCount.toLocaleString()} 人评分`
               : "暂无评分人数"}
           </small>
+          <RatingDistribution distribution={anime.ratingDistribution} />
           {anime.rank > 0 && <b>排名 #{anime.rank}</b>}
           <a href={anime.sourceUrl} target="_blank" rel="noreferrer">
             查看原条目 ↗
@@ -113,25 +148,13 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
       </section>
       <div className="series-content">
         <div className="series-main">
-          <section className="series-section" aria-labelledby="series-synopsis">
-            <h2 id="series-synopsis">剧情简介</h2>
-            <p className={`series-synopsis${expanded ? " is-expanded" : ""}`}>
-              {anime.synopsis || "暂无简介"}
-            </p>
-            {anime.synopsis?.length > 250 && (
-              <button
-                className="text-button"
-                onClick={() => setExpanded((value) => !value)}
-              >
-                {expanded ? "收起" : "展开全部"}
-              </button>
-            )}
-          </section>
           <section className="series-section" aria-labelledby="series-episodes">
             <div className="portal-section-heading">
               <div>
                 <h2 id="series-episodes">剧集</h2>
-                <span>{airingSummary(anime)}</span>
+                {nextAiring && (
+                  <span>第 {nextAiring.number} 集预计 {nextAiring.airdate} 播出</span>
+                )}
               </div>
               {count > 50 && (
                 <select
@@ -163,7 +186,7 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
                       }
                     >
                       第 {String(episode.number).padStart(2, "0")} 集
-                      <small>未播出</small>
+                      <small>{episode.airdate ? episode.airdate.slice(5) + " 预计" : "未播出"}</small>
                     </span>
                   ) : (
                     <Link
@@ -192,6 +215,22 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
                 </>
               )}
             </p>
+          </section>
+          <section className="series-section" aria-labelledby="series-synopsis">
+            <h2 id="series-synopsis">剧情简介</h2>
+            <p className={`series-synopsis${expanded ? " is-expanded" : ""}`}>
+              {anime.synopsis || "暂无简介"}
+            </p>
+            {anime.synopsis?.length > 250 && (
+              <button
+                className="text-button"
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? "收起" : "展开全部"}
+              </button>
+            )}
           </section>
           <section
             className="series-section"

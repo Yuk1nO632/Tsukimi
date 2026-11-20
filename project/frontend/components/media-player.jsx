@@ -4,13 +4,42 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import PlayerIcon from "./player-icon";
 
+const PLAYBACK_RATES = [0.5, 1, 1.25, 1.5, 2];
+const PREFERENCES_KEY = "tsukimi:player-prefs";
+
+function readPreferences(initialMuted) {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(PREFERENCES_KEY));
+  } catch {
+    // Playback also works when browser storage is unavailable.
+  }
+  return {
+    volume: Number.isFinite(saved?.volume) && saved.volume >= 0 && saved.volume <= 1 ? saved.volume : 1,
+    muted: typeof saved?.muted === "boolean" ? saved.muted : initialMuted,
+    speed: PLAYBACK_RATES.includes(saved?.speed) ? saved.speed : 1,
+  };
+}
+
+function savePreferences(video) {
+  try {
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify({
+      volume: video.volume,
+      muted: video.muted,
+      speed: video.playbackRate,
+    }));
+  } catch {
+    // The controls remain usable for this playback session.
+  }
+}
+
 function formatTime(value) {
   if (!Number.isFinite(value) || value < 0) return "00:00";
   const seconds = Math.floor(value);
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onNextLine, nextHref, autoPlay, initialMuted = false, active, globalKeyboard = false, initialPosition = 0, onProgress }) {
+export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onSwitchSource, onMediaError, onNextLine, nextHref, autoPlay, initialMuted = false, active, globalKeyboard = false, initialPosition = 0, onProgress, rememberPreferences = false }) {
   const progressCallback = useRef(onProgress);
   progressCallback.current = onProgress;
   const startedRef = useRef(false);
@@ -42,11 +71,14 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
   const clickTimer = useRef(null);
   const controlsHovered = useRef(false);
   const touchReveal = useRef(false);
+  const seekPointer = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
   const [ended, setEnded] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [buffer, setBuffer] = useState(null);
+  const [seekPreview, setSeekPreview] = useState(null);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(initialMuted);
   const [speed, setSpeed] = useState(1);
@@ -100,7 +132,17 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     }
     let disposed = false;
     let hls = null;
-    if (active !== undefined && media.format !== "hls") video.src = media.url;
+    if (rememberPreferences) {
+      const preferences = readPreferences(initialMuted);
+      video.volume = preferences.volume;
+      video.muted = preferences.muted;
+      video.defaultPlaybackRate = preferences.speed;
+      video.playbackRate = preferences.speed;
+      setVolume(video.volume);
+      setMuted(video.muted);
+      setSpeed(video.playbackRate);
+    }
+    if ((rememberPreferences || active !== undefined) && media.format !== "hls") video.src = media.url;
     const startPlayback = () => {
       if (!shouldAutoPlay || disposed) return;
       video.play().catch((error) => {
@@ -139,7 +181,11 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
         video.load();
       }
     };
-  }, [available, media.url, media.format, active, shouldAutoPlay]);
+  }, [available, media.url, media.format, active, shouldAutoPlay, rememberPreferences, initialMuted]);
+
+  useEffect(() => {
+    if (videoError) onMediaError?.();
+  }, [videoError, onMediaError]);
 
   async function togglePlay() {
     const video = videoRef.current;
@@ -157,6 +203,7 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     startedRef.current = true;
     video.currentTime = Math.max(0, Math.min(Number(value), video.duration));
     setCurrentTime(video.currentTime);
+    updateBuffer(video);
     revealControls();
   }
   function changeVolume(value) {
@@ -165,17 +212,57 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     video.volume = Math.max(0, Math.min(Number(value), 1));
     video.muted = video.volume === 0;
     setVolume(video.volume); setMuted(video.muted);
+    if (rememberPreferences) savePreferences(video);
   }
   function toggleMute() {
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
     setMuted(video.muted);
+    if (rememberPreferences) savePreferences(video);
   }
   function changeSpeed(value) {
-    if (!videoRef.current) return;
-    videoRef.current.playbackRate = Number(value);
-    setSpeed(Number(value));
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = Number(value);
+    setSpeed(video.playbackRate);
+    if (rememberPreferences) savePreferences(video);
+  }
+  function updateBuffer(video) {
+    if (!rememberPreferences) return;
+    let start = 0;
+    let end = 0;
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+      const { buffered, currentTime } = video;
+      for (let index = 0; index < buffered.length; index++) {
+        if (buffered.start(index) <= currentTime && currentTime <= buffered.end(index)) {
+          start = Math.max(0, buffered.start(index) / video.duration * 100);
+          end = Math.min(100, buffered.end(index) / video.duration * 100);
+          break;
+        }
+      }
+    }
+    setBuffer((previous) => {
+      if (start === end) return null;
+      return previous?.start === start && previous.end === end ? previous : { start, end };
+    });
+  }
+  function moveSeekPreview(event) {
+    const input = event.currentTarget;
+    if (!rememberPreferences || input.disabled) return;
+    if (event.pointerType !== "mouse" && seekPointer.current !== event.pointerId) return;
+    const { left, width } = input.getBoundingClientRect();
+    if (!width) return;
+    const x = Math.min(width, Math.max(0, event.clientX - left));
+    setSeekPreview({
+      time: x / width * duration,
+      x: input.offsetLeft + Math.min(width - 22, Math.max(22, x)),
+      y: input.offsetTop,
+    });
+  }
+  function finishSeekPreview(event) {
+    seekPointer.current = null;
+    if (event.pointerType !== "mouse" || event.type !== "pointerup") setSeekPreview(null);
   }
   async function fullscreen() {
     try {
@@ -231,32 +318,63 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
     const code = videoRef.current?.error?.code;
     setVideoError(code === 3 ? "视频暂时无法解码，请重试或切换线路。" : code === 4 ? "视频地址或格式暂不可用，请重试或切换线路。" : "视频读取失败，请检查网络后重试。");
   }
-  async function findSource() {
+  async function openPlaybackAction(action) {
     if (document.fullscreenElement === frameRef.current) await document.exitFullscreen().catch(() => {});
-    onFindSource?.();
+    action?.();
   }
-  async function changeLine() {
-    if (document.fullscreenElement === frameRef.current) await document.exitFullscreen().catch(() => {});
-    onNextLine?.();
+  function playbackActions() {
+    if (!rememberPreferences) {
+      return <>
+        {onNextLine && <button className="player-retry" type="button" onClick={() => void openPlaybackAction(onNextLine)}>换一条线路</button>}
+        <button className="player-retry" type="button" onClick={onRetry}>重新加载</button>
+        <button className="player-find-source" type="button" onClick={() => void openPlaybackAction(onFindSource)}>搜索 / 更换来源</button>
+      </>;
+    }
+    const retry = { label: "重新加载", run: onRetry };
+    const search = { label: "搜索播放来源", run: onFindSource };
+    const switchSource = { label: "切换来源", run: onSwitchSource };
+    const switchLine = { label: "换一条线路", run: onNextLine };
+    let actions = [retry, switchSource];
+    if (media.status === "unmatched") actions = [search, switchSource];
+    else if (media.reason === "episode_missing") actions = [switchSource, search];
+    else if (onNextLine) actions = [switchLine, retry];
+    return actions.filter(({ run }) => run).map(({ label, run }, index) =>
+      <button className={index === 0 ? "player-find-source" : "player-retry"} type="button" key={label} onClick={() => void openPlaybackAction(run)}>
+        {label}
+      </button>
+    );
   }
   const heading = videoError ? "暂时无法播放这一集" : media.status === "loading" ? "正在匹配并加载来源" : media.status === "unmatched" ? "先为这部番找到播放来源" : media.reason === "no_resources" ? "已匹配作品，暂无播放资源" : media.reason === "episode_missing" ? "来源目录暂缺这一集" : "来源暂时没有准备好";
   const percent = duration ? Math.min(100, currentTime / duration * 100) : 0;
 
   return <div className={`player-frame${controlsVisible ? " controls-visible" : " controls-hidden"}${initialLoading ? " is-initial-loading" : ""}`} ref={frameRef} tabIndex={0} role="region" aria-label={`${label}播放器，空格播放暂停，方向键快进或调节音量，D 或 F 全屏`} onKeyDown={onKeyDown} onPointerMove={revealControls} onPointerDown={(event) => { touchReveal.current = event.pointerType === "touch" && !controlsVisible && event.target === videoRef.current; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }}>
     <div className="player-canvas" onClick={clickCanvas} onDoubleClick={(event) => { if (event.target === videoRef.current || event.target === event.currentTarget) { window.clearTimeout(clickTimer.current); fullscreen(); } }}>
-      {available && <video ref={videoRef} className="actual-video" preload="metadata" autoPlay={active !== false && shouldAutoPlay} muted={muted} playsInline poster={poster} src={active === undefined && media.format !== "hls" ? media.url : undefined} aria-label={label}
+      {available && <video ref={videoRef} className="actual-video" preload="metadata" autoPlay={!rememberPreferences && active !== false && shouldAutoPlay} muted={muted} playsInline poster={poster} src={!rememberPreferences && active === undefined && media.format !== "hls" ? media.url : undefined} aria-label={label}
         onLoadedData={() => setHasFrame(true)} onEmptied={() => setHasFrame(false)}
         onLoadedMetadata={(event) => {
           const video = event.currentTarget;
-          setDuration(video.duration); setVideoError("");
+          setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+          setVideoError("");
           if (!restoredRef.current && Number.isFinite(video.duration)) {
             if (initialPosition > 0) video.currentTime = Math.min(initialPosition, Math.max(0, video.duration - 1));
             restoredRef.current = true;
           }
         }}
-        onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
-        onTimeUpdate={(event) => { setCurrentTime(event.currentTarget.currentTime); reportProgress(); }}
-        onSeeked={() => reportProgress(true)}
+        onDurationChange={(event) => {
+          const video = event.currentTarget;
+          setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+          updateBuffer(video);
+        }}
+        onProgress={(event) => updateBuffer(event.currentTarget)}
+        onTimeUpdate={(event) => {
+          setCurrentTime(event.currentTarget.currentTime);
+          updateBuffer(event.currentTarget);
+          reportProgress();
+        }}
+        onSeeked={(event) => {
+          updateBuffer(event.currentTarget);
+          reportProgress(true);
+        }}
         onPlay={() => {
           startedRef.current = true; setPlaying(true); setEnded(false);
           if (globalKeyboard && !shortcutShown.current) {
@@ -270,19 +388,36 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
         onRateChange={(event) => setSpeed(event.currentTarget.playbackRate)} onError={onError} />}
       <div className="player-topline"><span className="player-watermark">☾ TSUKIMI</span><span className="player-now-title">{label}</span></div>
       {media.isTest && <span className="test-video-label">测试短片 · 非番剧正片</span>}
-      {initialLoading ? <div className="player-buffering" role="status"><span className="loading-dot" />{media.status === "loading" ? "正在加载来源…" : "正在加载视频…"}</div> : overlay ? <div className="player-empty"><span className={`player-empty-icon${media.status === "loading" ? " is-loading" : ""}`} aria-hidden="true"><PlayerIcon name={media.status === "loading" ? "refresh" : "play"} size={30} /></span><h2>{heading}</h2><p>{videoError || media.message || "正在获取这一集的播放地址，请稍候。"}</p>{media.status !== "loading" && <div className="player-empty-actions">{onNextLine && <button className="player-retry" type="button" onClick={changeLine}>换一条线路</button>}<button className="player-retry" type="button" onClick={onRetry}>重新加载</button><button className="player-find-source" type="button" onClick={findSource}>搜索 / 更换来源</button></div>}</div>
+      {initialLoading ? <div className="player-buffering" role="status"><span className="loading-dot" />{media.status === "loading" ? "正在加载来源…" : "正在加载视频…"}</div> : overlay ? <div className="player-empty"><span className={`player-empty-icon${media.status === "loading" ? " is-loading" : ""}`} aria-hidden="true"><PlayerIcon name={media.status === "loading" ? "refresh" : "play"} size={30} /></span><h2>{heading}</h2><p>{videoError || media.message || "正在获取这一集的播放地址，请稍候。"}</p>{media.status !== "loading" && <div className="player-empty-actions">{playbackActions()}</div>}</div>
         : ended ? <div className="player-ended"><span>本次播放已结束</span><div><button type="button" onClick={togglePlay}>重新播放</button>{nextHref && !media.isTest && <Link href={nextHref} scroll={false}>下一集 <PlayerIcon name="next" size={16} /></Link>}</div></div>
         : !playing && !initialLoading && <button className="player-center-play" type="button" onClick={togglePlay} aria-label="开始播放视频"><PlayerIcon name="play" size={32} /></button>}
       {!overlay && !initialLoading && waiting && <div className="player-buffering" role="status"><span className="loading-dot" />正在缓冲…</div>}
     </div>
     {notice && <div className="player-toast" role="status">{notice}</div>}
     <div className="player-controls real-player-controls" ref={controlsRef} onPointerEnter={() => { controlsHovered.current = true; revealControls(); }} onPointerLeave={() => { controlsHovered.current = false; revealControls(); }} onFocusCapture={revealControls} onBlurCapture={revealControls}>
-      <input className="seek-range" aria-label="播放进度" title="左右方向键快进或后退 5 秒" aria-valuetext={`${formatTime(currentTime)}，总时长 ${formatTime(duration)}`} style={{ "--seek-fill": `${percent}%` }} type="range" min="0" max={duration || 1} step="0.1" value={Math.min(currentTime, duration || 1)} disabled={!available || !duration || !!videoError} onChange={(event) => seek(event.target.value)} />
+      <input
+        className="seek-range" type="range" min="0" max={duration || 1} step="0.1"
+        aria-label="播放进度" title="左右方向键快进或后退 5 秒"
+        aria-valuetext={`${formatTime(currentTime)}，总时长 ${formatTime(duration)}`}
+        value={Math.min(currentTime, duration || 1)} disabled={!available || !duration || !!videoError}
+        style={{ "--seek-fill": percent + "%", "--buffer-start": (buffer?.start || 0) + "%", "--buffer-end": (buffer?.end || 0) + "%" }}
+        onChange={(event) => seek(event.target.value)}
+        onPointerDown={(event) => { seekPointer.current = event.pointerId; moveSeekPreview(event); }}
+        onPointerMove={moveSeekPreview}
+        onPointerLeave={(event) => { if (event.pointerType === "mouse" || seekPointer.current === null) setSeekPreview(null); }}
+        onPointerUp={finishSeekPreview} onPointerCancel={finishSeekPreview} onLostPointerCapture={finishSeekPreview}
+        onBlur={() => setSeekPreview(null)}
+      />
+      {seekPreview && available && !videoError && (
+        <span className="seek-time-preview" aria-hidden="true" style={{ left: seekPreview.x, top: seekPreview.y }}>
+          {formatTime(seekPreview.time)}
+        </span>
+      )}
       <button type="button" disabled={!available || !!videoError} onClick={togglePlay} aria-label={playing ? "暂停视频" : "播放视频"} title="播放 / 暂停（空格）"><PlayerIcon name={playing ? "pause" : "play"} /></button>
       {nextHref && !media.isTest && <Link className="player-next" href={nextHref} scroll={false} aria-label="播放下一集" title="下一集"><PlayerIcon name="next" size={18} /></Link>}
       <span className="player-time">{formatTime(currentTime)} <i>/ {formatTime(duration)}</i></span>
       <div className="player-volume"><button type="button" onClick={toggleMute} disabled={!available} aria-label={muted ? "取消静音" : "静音视频"} title="静音（M）"><PlayerIcon name={muted || volume === 0 ? "mute" : "volume"} /></button><input aria-label="音量" type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} disabled={!available} onChange={(event) => changeVolume(event.target.value)} /></div>
-      <select aria-label="播放速度" title="播放倍速" value={speed} disabled={!available} onChange={(event) => changeSpeed(event.target.value)}>{[0.5, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate === 1 ? "倍速" : `${rate}×`}</option>)}</select>
+      <select aria-label="播放速度" title="播放倍速" value={speed} disabled={!available} onChange={(event) => changeSpeed(event.target.value)}>{PLAYBACK_RATES.map((rate) => <option key={rate} value={rate}>{rate === 1 ? "倍速" : `${rate}×`}</option>)}</select>
       {onWide && <button className="player-wide" type="button" aria-label={wide ? "退出宽屏" : "宽屏模式"} aria-pressed={wide} title={wide ? "退出宽屏" : "宽屏模式"} onClick={onWide}><PlayerIcon name="wide" /></button>}
       <button type="button" onClick={fullscreen} aria-label={isFullscreen ? "退出播放器全屏" : "播放器全屏"} title={isFullscreen ? "退出全屏（D / F / Esc）" : "全屏（D / F）"}><PlayerIcon name={isFullscreen ? "restore" : "fullscreen"} /></button>
     </div>

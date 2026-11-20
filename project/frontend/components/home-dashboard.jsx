@@ -63,49 +63,27 @@ export default function HomeDashboard() {
         )}
       </div>
       <div className="content-shell home-portal">
-        <nav className="home-shortcuts" aria-label="频道入口">
-          <Link prefetch={false} href={seasonUrl}>
-            <strong>本季新番</strong>
-            <span>
-              {year} 年 {season * 3 - 2} 月 →
-            </span>
-          </Link>
-          <Link prefetch={false} href="/browse">
-            <strong>番剧索引</strong>
-            <span>年份 · 季度 · 类型 →</span>
-          </Link>
-          <Link prefetch={false} href="/calendar">
-            <strong>放送日历</strong>
-            <span>每周放送安排 →</span>
-          </Link>
-          <Link prefetch={false} href="/collection">
-            <strong>我的追番</strong>
-            <span>
-              {status === "ready"
-                ? `${collectionItems.length} 部已加入片单`
-                : "读取片单中"}{" "}
-              →
-            </span>
-          </Link>
-        </nav>
-        <nav className="home-category-nav" aria-label="番剧类型快捷浏览">
-          <strong>分类浏览</strong>
-          <div className="home-category-links">
-            {genres.map((genre) => (
+        <ContinueWatching home />
+        <nav className="home-quick-nav" aria-label="番剧频道与分类">
+          <div className="home-quick-channels">
+            <Link prefetch={false} href={seasonUrl}>本季新番</Link>
+            <Link prefetch={false} href="/browse">番剧索引</Link>
+            <Link prefetch={false} href="/calendar">放送日历</Link>
+            <Link prefetch={false} href="/collection">我的追番</Link>
+          </div>
+          <div className="home-quick-genres">
+            {genres.slice(0, 6).map((genre) => (
               <Link
                 prefetch={false}
                 key={genre}
-                href={`/browse?${new URLSearchParams({ genre, sort: "heat" })}`}
+                href={'/browse?' + new URLSearchParams({ genre, sort: "heat" })}
               >
                 {genre}
               </Link>
             ))}
+            <Link prefetch={false} href="/browse">全部分类 →</Link>
           </div>
-          <Link prefetch={false} href="/browse">
-            全部分类 ↗
-          </Link>
         </nav>
-        <ContinueWatching />
         <HomeSeasonRanking
           items={seasonItems}
           loading={loading}

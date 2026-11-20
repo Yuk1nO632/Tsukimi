@@ -57,7 +57,7 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
 
   return (
     <section
-      className="featured-hero"
+      className={showArtwork ? "featured-hero" : "featured-hero has-portrait"}
       aria-roledescription="轮播"
       aria-label="当季新番推荐"
       onMouseEnter={() => setHovered(true)}
@@ -69,24 +69,25 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
         }
       }}
     >
-      <div
-        className={`featured-art${showArtwork ? "" : " is-poster"}`}
-        aria-hidden="true"
-        key={active.id}
-      >
-        <Image
-          src={showArtwork ? `/featured/${active.id}.webp` : active.cover}
-          alt=""
-          fill
-          loading="eager"
-          fetchPriority="high"
-          sizes="(max-width: 700px) 100vw, 70vw"
-          onError={() => {
-            if (showArtwork) setFailedArtwork(active.id);
-          }}
-        />
-      </div>
+      {showArtwork && (
+        <div className="featured-art" aria-hidden="true" key={active.id}>
+          <Image
+            src={"/featured/" + active.id + ".webp"}
+            alt=""
+            fill
+            loading="eager"
+            fetchPriority="high"
+            sizes="(max-width: 700px) 100vw, 70vw"
+            onError={() => setFailedArtwork(active.id)}
+          />
+        </div>
+      )}
       <div className="featured-intro content-shell">
+        {!showArtwork && (
+          <div className="featured-poster-ambient" aria-hidden="true">
+            <Image src={active.cover} alt="" fill sizes="(max-width: 700px) 120px, 270px" />
+          </div>
+        )}
         <div className="featured-copy" aria-live="off">
           <p className="featured-season">{seasonLabel}</p>
           <h1
@@ -120,6 +121,18 @@ export default function FeaturedHero({ items = [], seasonLabel = "本季新番" 
             )}
           </div>
         </div>
+        {!showArtwork && (
+          <div className="featured-portrait" aria-hidden="true" key={active.id}>
+            <Image
+              src={active.cover}
+              alt=""
+              fill
+              loading="eager"
+              fetchPriority="high"
+              sizes="(max-width: 700px) 120px, 270px"
+            />
+          </div>
+        )}
       </div>
       {items.length > 1 && (
         <div className="featured-picker content-shell">

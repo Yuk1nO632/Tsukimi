@@ -2143,3 +2143,103 @@ summary:focus-visible {
 .line-probe-unknown {
   color: #97a2b4;
 }
+
+.series-overview {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.series-ambient {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  inset: -12% 42% -18% -9%;
+  opacity: var(--series-ambient-opacity, .16);
+  mask-image: linear-gradient(90deg, #000 30%, transparent);
+}
+.series-ambient img {
+  object-fit: cover;
+  filter: blur(34px) saturate(.82);
+}
+.series-summary h1 {
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.series-airing-status {
+  margin: 12px 0 0;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.series-rating {
+  border-color: var(--line);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.series-rating-distribution {
+  width: min(100%, 128px);
+  color: var(--muted);
+}
+.series-rating-distribution summary {
+  border-radius: 6px;
+  padding: 5px;
+  text-align: center;
+  cursor: pointer;
+}
+.series-rating-bars {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  align-items: end;
+  gap: 3px;
+  height: 20px;
+  margin-bottom: 3px;
+  border-bottom: 1px solid var(--line);
+}
+.series-rating-bars i {
+  height: var(--rating-height);
+  border-radius: 2px 2px 0 0;
+  background: var(--pink);
+}
+.series-rating-distribution dl {
+  display: grid;
+  gap: 4px;
+  padding: 7px 5px;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.series-rating-distribution dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+}
+.series-rating-distribution dd {
+  margin: 0;
+}
+.series-rating-distribution summary:focus-visible,
+.series-episode-grid > a:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+}
+.series-episode-grid > .episode-pending small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 860px) {
+  .series-rating-distribution {
+    width: 91px;
+  }
+}
+@media (max-width: 540px) {
+  .series-airing-status {
+    margin-top: 8px;
+    font-size: 11px;
+  }
+  .series-episode-grid > .episode-pending {
+    flex-wrap: wrap;
+    gap: 2px 5px;
+  }
+}

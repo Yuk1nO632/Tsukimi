@@ -1,7 +1,7 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { animeList } from "../lib/anime";
 import { readPlayback, rememberSource } from "../lib/playback-api";
@@ -27,6 +27,7 @@ export default function WatchStudio({
   const { data: detail } = useApi(`/api/catalog/${anime.id}`);
   const airingAnime = detail || anime;
   const [wide, setWide] = useState(false);
+  const [episodeRange, setEpisodeRange] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [testMode, setTestMode] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -37,6 +38,7 @@ export default function WatchStudio({
   const progress = useWatchProgress(anime.id, selectedEpisode, source, !testMode);
   const helpRef = useRef(null);
   const sourcePanelRef = useRef(null);
+  const episodePanelRef = useRef(null);
   const matcherDetailsRef = useRef(null);
   const saveSourceController = useRef(null);
   const [selectingSource, setSelectingSource] = useState(false);
@@ -119,16 +121,25 @@ export default function WatchStudio({
     if (lineId) query.set("line", String(lineId));
     return `/watch/${anime.id}?${query}`;
   }
+  const expandSource = useCallback(() => {
+    if (sourcePanelRef.current) sourcePanelRef.current.open = true;
+  }, []);
+  function openSource() {
+    const panel = sourcePanelRef.current;
+    if (!panel) return;
+    expandSource();
+    panel.querySelector("summary")?.focus({ preventScroll: true });
+    panel.scrollIntoView({ block: "nearest" });
+  }
   function findSource() {
+    openSource();
     if (matcherDetailsRef.current) matcherDetailsRef.current.open = true;
-    sourcePanelRef.current?.scrollIntoView({
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "instant"
-        : "smooth",
-      block: "center",
-    });
     sourceInputRef.current?.focus({ preventScroll: true });
     sourceInputRef.current?.select();
+  }
+  function openEpisodes() {
+    episodePanelRef.current?.focus({ preventScroll: true });
+    episodePanelRef.current?.scrollIntoView({ block: "start" });
   }
   async function chooseSource(id, item) {
     if (selectingSource) return;
@@ -178,7 +189,14 @@ export default function WatchStudio({
     ? { status: "ready", url: "/media/flower.mp4", isTest: true }
     : progress.loading ? { status: "loading" } : source;
   const ready = source.status === "ready";
+  useEffect(() => {
+    if (sourcePanelRef.current && source.status !== "loading") {
+      sourcePanelRef.current.open = source.status !== "ready";
+    }
+  }, [source.status]);
   const matched = Boolean(source.source_anime_id);
+  const providerLabel = sourceNames[source.provider] || "自动选择";
+  const lineLabel = source.line_name || source.lines?.find((line) => line.id === source.line_id)?.name;
   const sourceLabel =
     source.status === "loading"
       ? "连接中"
@@ -192,6 +210,13 @@ export default function WatchStudio({
   const schedule = episodeSchedule(
     airingAnime,
     Math.max(source.episode_count || 0, selectedEpisode),
+  );
+  const rangeCount = Math.ceil(schedule.length / 50);
+  const activeRange = Math.min(
+    rangeCount - 1,
+    episodeRange?.episode === selectedEpisode
+      ? episodeRange.index
+      : Math.floor((selectedEpisode - 1) / 50),
   );
   const previousEpisode = schedule[selectedEpisode - 2];
   const previousHref =
@@ -226,6 +251,7 @@ export default function WatchStudio({
             onProgress={testMode ? undefined : progress.report}
             globalKeyboard
             autoPlay={!testMode}
+            rememberPreferences={!testMode}
             label={
               testMode
                 ? "MDN 播放器测试短片"
@@ -235,32 +261,13 @@ export default function WatchStudio({
             onWide={() => setWide((previous) => !previous)}
             onRetry={reloadSource}
             onFindSource={findSource}
+            onSwitchSource={openSource}
+            onMediaError={testMode ? undefined : expandSource}
             onNextLine={
               !testMode && source.lines?.length > 1 ? nextLine : undefined
             }
             nextHref={nextHref}
           />
-          {!testMode && <div className={`watch-progress-status${progress.error ? " has-error" : ""}`} role="status">
-            <span>{progress.message}</span>
-            {progress.conflict ? <div>
-              <button className="text-button" onClick={() => { progress.discardLocal(); window.location.assign(progressUrl(progress.conflict)); }}>使用云端进度</button>
-              <button className="text-button" onClick={progress.keepLocal}>以本机进度继续</button>
-            </div> : progress.error && <button className="text-button" onClick={progress.retry}>重试同步</button>}
-          </div>}
-          <div className="watch-now">
-            <div>
-              <span className="watch-now-kicker">
-                {testMode ? "播放器测试" : "正在观看"}
-              </span>
-              <h2>
-                {anime.title}
-                <span>第 {String(selectedEpisode).padStart(2, "0")} 集</span>
-              </h2>
-            </div>
-            <button type="button" className="watch-share" onClick={copyLink}>
-              复制链接 ↗
-            </button>
-          </div>
           <div className="watch-episode-navigation">
             {previousHref ? (
               <Link prefetch={false} scroll={false} href={previousHref}>
@@ -293,6 +300,31 @@ export default function WatchStudio({
                   : "已是最后一集"}
               </button>
             )}
+            <div className="watch-mobile-tools">
+              <button type="button" onClick={openEpisodes} aria-controls="watch-episode-panel">选集</button>
+              <button type="button" onClick={openSource} aria-controls="watch-source-panel">换线 / 来源</button>
+            </div>
+          </div>
+          {!testMode && <div className={`watch-progress-status${progress.error ? " has-error" : ""}`} role="status">
+            <span>{progress.message}</span>
+            {progress.conflict ? <div>
+              <button className="text-button" onClick={() => { progress.discardLocal(); window.location.assign(progressUrl(progress.conflict)); }}>使用云端进度</button>
+              <button className="text-button" onClick={progress.keepLocal}>以本机进度继续</button>
+            </div> : progress.error && <button className="text-button" onClick={progress.retry}>重试同步</button>}
+          </div>}
+          <div className="watch-now">
+            <div>
+              <span className="watch-now-kicker">
+                {testMode ? "播放器测试" : "正在观看"}
+              </span>
+              <h2>
+                {anime.title}
+                <span>第 {String(selectedEpisode).padStart(2, "0")} 集</span>
+              </h2>
+            </div>
+            <button type="button" className="watch-share" onClick={copyLink}>
+              复制链接 ↗
+            </button>
           </div>
           <div className="watch-assist">
             <span className="playback-origin">
@@ -369,110 +401,32 @@ export default function WatchStudio({
             </Link>
           </div>
           <section
-            className={`watch-source-panel${!ready ? " needs-source" : ""}`}
-            ref={sourcePanelRef}
-            aria-labelledby="source-panel-title"
-          >
-            <div className="source-panel-heading">
-              <h2 id="source-panel-title">
-                播放来源 <span>{sourceNames[source.provider] || "自动选择"}</span>
-              </h2>
-              <span className={`source-badge${ready ? " is-ready" : ""}`}>
-                <i />
-                {sourceLabel}
-              </span>
-            </div>
-            <label className="source-line-label">
-              来源优先级
-              <select
-                aria-label="来源优先级"
-                value={selectedProvider}
-                disabled={selectingSource}
-                onChange={(event) => router.replace(
-                  `/watch/${anime.id}?episode=${selectedEpisode}&provider=${event.target.value}`,
-                  { scroll: false },
-                )}
-              >
-                <option value="auto">自动（AniCh 优先）</option>
-                <option value="anich">优先 AniCh</option>
-                <option value="xifan">优先稀饭动漫</option>
-              </select>
-            </label>
-            {source.fallback_from && (
-              <p className="small-label">{sourceNames[source.fallback_from]} 暂不可用，已切换至 {sourceNames[source.provider]}。</p>
-            )}
-            <details
-              className="watch-source-tools"
-              ref={matcherDetailsRef}
-              open={source.status === "unmatched"}
-            >
-              <summary>
-                {source.status === "unmatched"
-                  ? "确认播放来源"
-                  : "更换来源 / 匹配有误？"}
-              </summary>
-              <SourceMatcher
-                key={activeProvider}
-                provider={activeProvider}
-                title={anime.title}
-                inputRef={sourceInputRef}
-                selectedId={source.source_anime_id}
-                initialItems={source.candidates}
-                selecting={selectingSource}
-                onSelect={chooseSource}
-              />
-              {sourceSaveError && (
-                <p className="source-save-error" role="alert">
-                  {sourceSaveError}
-                </p>
-              )}
-            </details>
-            {matched && (
-              <div className="source-current">
-                <span>当前作品</span>
-                <strong>{source.source_title}</strong>
-              </div>
-            )}
-            {source.lines?.length > 0 && (
-              <LineSelector
-                context={`${activeProvider}:${anime.id}:${selectedEpisode}`}
-                lines={source.lines}
-                selectedId={source.line_id}
-                disabled={testMode}
-                onSelect={(id) =>
-                  router.replace(
-                    episodeUrl(selectedEpisode, source.source_anime_id, id),
-                    { scroll: false },
-                  )
-                }
-              />
-            )}
-            <div className="source-panel-actions">
-              <button
-                type="button"
-                disabled={source.status === "loading" || testMode}
-                onClick={reloadSource}
-              >
-                <PlayerIcon name="refresh" size={13} />
-                重新连接
-              </button>
-              {source.source_page && (
-                <a href={source.source_page} target="_blank" rel="noreferrer">
-                  前往来源站 ↗
-                </a>
-              )}
-            </div>
-          </section>
-          <section
+            id="watch-episode-panel"
             className="watch-episodes-panel"
+            ref={episodePanelRef}
+            tabIndex={-1}
             aria-labelledby="episodes-title"
           >
             <div className="episode-selector-heading">
               <h2 id="episodes-title">选集</h2>
               <span>{airingSummary(airingAnime)}</span>
             </div>
+            {rangeCount > 1 && (
+              <select
+                className="watch-episode-range"
+                aria-label="剧集范围"
+                value={activeRange}
+                onChange={(event) => setEpisodeRange({ episode: selectedEpisode, index: Number(event.target.value) })}
+              >
+                {Array.from({ length: rangeCount }, (_, index) => (
+                  <option key={index} value={index}>
+                    {index * 50 + 1}–{Math.min(schedule.length, (index + 1) * 50)} 集
+                  </option>
+                ))}
+              </select>
+            )}
             <div className="episode-selector" aria-label="选集列表">
-              {schedule.map((episode) =>
+              {schedule.slice(activeRange * 50, (activeRange + 1) * 50).map((episode) =>
                 episode.status === "upcoming" ? (
                   <span
                     key={episode.number}
@@ -515,6 +469,101 @@ export default function WatchStudio({
                 "放送进度按 Bangumi 分集日期标注，实际资源以播放来源为准。"}
             </p>
           </section>
+          <details
+            id="watch-source-panel"
+            className={`watch-source-panel${!ready ? " needs-source" : ""}`}
+            ref={sourcePanelRef}
+            aria-labelledby="source-panel-title"
+          >
+            <summary className="source-panel-heading">
+              <span id="source-panel-title">
+                播放来源 <small>{lineLabel ? providerLabel + " · " + lineLabel : providerLabel}</small>
+              </span>
+              <span className={ready ? "source-badge is-ready" : "source-badge"}>{sourceLabel}</span>
+            </summary>
+            <div className="watch-source-settings">
+              <label className="source-line-label">
+                来源优先级
+                <select
+                  aria-label="来源优先级"
+                  value={selectedProvider}
+                  disabled={selectingSource}
+                  onChange={(event) => router.replace(
+                    `/watch/${anime.id}?episode=${selectedEpisode}&provider=${event.target.value}`,
+                    { scroll: false },
+                  )}
+                >
+                  <option value="auto">自动（AniCh 优先）</option>
+                  <option value="anich">优先 AniCh</option>
+                  <option value="xifan">优先稀饭动漫</option>
+                </select>
+              </label>
+              {source.fallback_from && (
+                <p className="small-label">{sourceNames[source.fallback_from]} 暂不可用，已切换至 {sourceNames[source.provider]}。</p>
+              )}
+              <details
+                className="watch-source-tools"
+                ref={matcherDetailsRef}
+                open={source.status === "unmatched"}
+              >
+                <summary>
+                  {source.status === "unmatched"
+                    ? "确认播放来源"
+                    : "更换来源 / 匹配有误？"}
+                </summary>
+                <SourceMatcher
+                  key={activeProvider}
+                  provider={activeProvider}
+                  title={anime.title}
+                  inputRef={sourceInputRef}
+                  selectedId={source.source_anime_id}
+                  initialItems={source.candidates}
+                  selecting={selectingSource}
+                  onSelect={chooseSource}
+                />
+                {sourceSaveError && (
+                  <p className="source-save-error" role="alert">
+                    {sourceSaveError}
+                  </p>
+                )}
+              </details>
+              {matched && (
+                <div className="source-current">
+                  <span>当前作品</span>
+                  <strong>{source.source_title}</strong>
+                </div>
+              )}
+              {source.lines?.length > 0 && (
+                <LineSelector
+                  context={`${activeProvider}:${anime.id}:${selectedEpisode}`}
+                  lines={source.lines}
+                  selectedId={source.line_id}
+                  disabled={testMode}
+                  onSelect={(id) =>
+                    router.replace(
+                      episodeUrl(selectedEpisode, source.source_anime_id, id),
+                      { scroll: false },
+                    )
+                  }
+                />
+              )}
+              <div className="source-panel-actions">
+                <button
+                  type="button"
+                  disabled={source.status === "loading" || testMode}
+                  onClick={reloadSource}
+                >
+                  <PlayerIcon name="refresh" size={13} />
+                  重新连接
+                </button>
+                {source.source_page && (
+                  <a href={source.source_page} target="_blank" rel="noreferrer">
+                    前往来源站 ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          </details>
         </aside>
       </div>
       <div className="watch-below">

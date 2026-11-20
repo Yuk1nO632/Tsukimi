@@ -17,7 +17,7 @@ export function progressUrl(item) {
   return `/watch/${item.anime_id || item.anime.id}?${query}`;
 }
 
-export default function ContinueWatching({ animeId, manage = false, history = false }) {
+export default function ContinueWatching({ animeId, manage = false, history = false, home = false }) {
   const account = useAccount();
   const pathname = usePathname();
   const [records, setRecords] = useState({ scope: null, items: [] });
@@ -159,14 +159,53 @@ export default function ContinueWatching({ animeId, manage = false, history = fa
         分 {Math.floor(visible[0].position % 60)} 秒 →
       </Link>
     );
+  function renderCard(item, featured = false) {
+    return (
+      <article className={featured ? "continue-card continue-card-featured" : "continue-card"} key={item.anime.id}>
+        <Link
+          prefetch={false}
+          className="continue-card-link"
+          href={progressUrl(item)}
+        >
+          <span className="continue-cover">
+            <Image src={item.anime.cover} alt="" fill sizes={featured ? "82px" : "72px"} />
+          </span>
+          <span className="continue-copy">
+            <strong>{item.anime.title}</strong>
+            <span>
+              第 {item.episode} 集 · {Math.floor(item.position / 60)} 分{" "}
+              {Math.floor(item.position % 60)} 秒
+            </span>
+            <span className="continue-track">
+              <i
+                style={{
+                  width: `${Math.min(100, (item.position / item.duration) * 100)}%`,
+                }}
+              />
+            </span>
+            <small>{item.completed ? "已看完 · 再次播放 →" : "继续播放 →"}</small>
+          </span>
+        </Link>
+        {!home && <button
+          className="continue-remove"
+          type="button"
+          aria-label={`删除《${item.anime.title}》的观看记录`}
+          disabled={removing !== null || account.busy}
+          onClick={() => void remove(item)}
+        >
+          {removing === item.anime_id ? "删除中…" : "删除记录"}
+        </button>}
+      </article>
+    );
+  }
   return (
-    <section id={history ? "watch-history" : "continue-watching"} className="continue-section" aria-label={history ? "观看历史" : "继续观看"}>
+    <section id={history ? "watch-history" : "continue-watching"} className={home ? "continue-section home-continue" : "continue-section"} aria-label={history ? "观看历史" : "继续观看"}>
       <div className="portal-section-heading">
         <div>
           <h2>{history ? `观看历史（${available.length}）` : "继续观看"}</h2>
-          <span>
+          {!home && <span>
             {account.user ? "已同步的观看记录" : "当前浏览器的观看记录"}
-          </span>
+          </span>}
         </div>
         {manage && available.length > 6 && (
           <button
@@ -187,45 +226,23 @@ export default function ContinueWatching({ animeId, manage = false, history = fa
       {removeError && (
         <p className="progress-read-error" role="alert">{removeError}</p>
       )}
-      <div className="continue-grid">
-        {visible.map((item) => (
-          <article className="continue-card" key={item.anime.id}>
-            <Link
-              prefetch={false}
-              className="continue-card-link"
-              href={progressUrl(item)}
-            >
-              <span className="continue-cover">
-                <Image src={item.anime.cover} alt="" fill sizes="72px" />
-              </span>
-              <span className="continue-copy">
-                <strong>{item.anime.title}</strong>
-                <span>
-                  第 {item.episode} 集 · {Math.floor(item.position / 60)} 分{" "}
-                  {Math.floor(item.position % 60)} 秒
-                </span>
-                <span className="continue-track">
-                  <i
-                    style={{
-                      width: `${Math.min(100, (item.position / item.duration) * 100)}%`,
-                    }}
-                  />
-                </span>
-                <small>{item.completed ? "已看完 · 再次播放 →" : "继续播放 →"}</small>
-              </span>
-            </Link>
-            <button
-              className="continue-remove"
-              type="button"
-              aria-label={`删除《${item.anime.title}》的观看记录`}
-              disabled={removing !== null || account.busy}
-              onClick={() => void remove(item)}
-            >
-              {removing === item.anime_id ? "删除中…" : "删除记录"}
-            </button>
-          </article>
-        ))}
-      </div>
+      {home ? (
+        <>
+          {renderCard(visible[0], true)}
+          {visible.length > 1 && (
+            <details className="home-continue-more">
+              <summary>其他续看记录（{visible.length - 1}）</summary>
+              <div className="continue-grid">
+                {visible.slice(1).map((item) => renderCard(item))}
+              </div>
+            </details>
+          )}
+        </>
+      ) : (
+        <div className="continue-grid">
+          {visible.map((item) => renderCard(item))}
+        </div>
+      )}
     </section>
   );
 }

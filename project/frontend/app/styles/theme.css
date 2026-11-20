@@ -870,8 +870,8 @@ summary:focus-visible {
   color: var(--pink);
 }
 .series-overview {
-  background: white;
-  border-color: #e8e2ec;
+  background: var(--surface);
+  border-color: var(--line);
   border-radius: 20px;
   padding: 32px;
   gap: 34px;
