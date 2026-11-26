@@ -160,7 +160,7 @@ export default function CatalogBrowser({ params, searching = false }) {
         <>
           <div className="anime-grid portal-grid">
             {data.items.map((anime) => (
-              <AnimeCard key={anime.id} anime={anime} />
+              <AnimeCard key={anime.id} anime={anime} searchDetails={searching || !!params.q} />
             ))}
           </div>
           <nav className="pagination" aria-label="结果分页">

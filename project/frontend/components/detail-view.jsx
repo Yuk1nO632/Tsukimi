@@ -7,6 +7,7 @@ import useApi from "../lib/use-api";
 import { airingSummary, episodeSchedule } from "../lib/airing";
 import ContinueWatching from "./continue-watching";
 import FavoriteButton from "./favorite-button";
+import SeriesOrder from "./series-order";
 import { CollectionStatusPicker } from "./collection-provider";
 
 function RatingDistribution({ distribution }) {
@@ -216,6 +217,7 @@ export default function DetailView({ anime: initialAnime, initialSource }) {
               )}
             </p>
           </section>
+          <SeriesOrder animeId={anime.id} />
           <section className="series-section" aria-labelledby="series-synopsis">
             <h2 id="series-synopsis">剧情简介</h2>
             <p className={`series-synopsis${expanded ? " is-expanded" : ""}`}>

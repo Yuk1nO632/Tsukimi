@@ -143,7 +143,7 @@ export default function useWatchProgress(animeId, episode, source, enabled) {
       try {
         while (writes.has(key)) await writes.get(key)?.catch(() => {});
         const data = await requestJson(
-          `/api/progress/${encodeURIComponent(animeId)}`,
+          `/api/progress/${encodeURIComponent(animeId)}?episode=${episode}`,
           { signal: controller.signal },
         );
         if (!current.mounted) return;
@@ -161,19 +161,14 @@ export default function useWatchProgress(animeId, episode, source, enabled) {
           current.retry = pending;
           current.retrySample = pending;
         }
-        const resume = pending?.episode === episode ? pending : data.item;
+        const latest = pending?.episode === episode ? pending : data.item;
+        const position = latest?.episode === episode
+          ? (latest.completed ? 0 : latest.position)
+          : (data.episode_item?.position || 0);
         setState({
           loading: false,
-          position:
-            resume?.episode === episode && !resume.completed
-              ? resume.position
-              : 0,
-          message:
-            data.item?.episode === episode &&
-            !data.item.completed &&
-            data.item.position > 0
-              ? "已恢复上次观看位置"
-              : "播放后自动保存进度",
+          position,
+          message: position > 0 ? "已恢复上次观看位置" : "播放后自动保存进度",
           conflict: null,
           error: false,
         });

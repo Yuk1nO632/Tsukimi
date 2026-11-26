@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import ContinueWatching from "./continue-watching";
+import WatchingQueue from "./watching-queue";
 import { useAccount } from "./account-provider";
 import AnimeCard from "./anime-card";
 import {
@@ -18,6 +19,7 @@ export default function CollectionManager() {
   const [tab, setTab] = useState("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("updated");
+  const watchingItems = tab === "watching" ? collectionItems.filter((item) => item.status === "watching") : [];
   const items = collectionItems
     .filter(
       (item) =>
@@ -90,6 +92,9 @@ export default function CollectionManager() {
           </select>
         </div>
       </div>
+      {status === "ready" && watchingItems.length > 0 && (
+        <WatchingQueue key={account.scope} items={watchingItems} query={query} />
+      )}
       {status === "loading" ? (
         <SkeletonGrid />
       ) : status === "error" ? (

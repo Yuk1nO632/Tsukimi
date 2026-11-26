@@ -452,6 +452,17 @@ def create_account_router(store, sessions):
                         f"INSERT OR IGNORE INTO {table} (owner_id, {names}) SELECT ?, {names} FROM {table} WHERE owner_id = ?",
                         (user["id"], row[0]),
                     )
+                connection.execute(
+                    """INSERT OR IGNORE INTO watch_episode_history
+                       (owner_id, anime_id, episode, position, duration, completed, updated_at,
+                        source_provider, source_id, line_id)
+                       SELECT ?, h.anime_id, h.episode, h.position, h.duration, h.completed,
+                              h.updated_at, h.source_provider, h.source_id, h.line_id
+                       FROM watch_episode_history h
+                       JOIN watch_progress p ON p.owner_id = ? AND p.anime_id = h.anime_id
+                       WHERE h.owner_id = ? AND p.duration > 0""",
+                    (user["id"], user["id"], row[0]),
+                )
             connection.execute(
                 "DELETE FROM pending_imports WHERE token_hash = ?", (token,)
             )

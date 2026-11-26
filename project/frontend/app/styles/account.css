@@ -443,3 +443,117 @@
     padding: 14px;
   }
 }
+
+.continue-history-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin: 0 1rem;
+  padding: .65rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.continue-history-actions a,
+.episode-history-legacy a {
+  color: var(--pink);
+}
+.continue-history-actions button {
+  padding: .25rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.continue-history-actions button:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+.episode-history-header,
+.episode-history-summary,
+.episode-history-legacy {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem 1rem;
+}
+.episode-history-header {
+  margin: 1rem 0 1.25rem;
+}
+.episode-history-header > div {
+  flex: 1 1 12rem;
+}
+.episode-history-header h1 {
+  margin: 0 0 .4rem;
+}
+.episode-history-header p,
+.episode-history-summary p {
+  margin: 0;
+  color: var(--muted);
+}
+.episode-history-cover {
+  position: relative;
+  width: 64px;
+  height: 88px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.episode-history-cover img {
+  object-fit: cover;
+}
+.episode-history-summary,
+.episode-history-legacy {
+  justify-content: space-between;
+  margin-bottom: .75rem;
+}
+.episode-history-summary select {
+  padding: .45rem .65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.episode-history-legacy {
+  padding: .75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.episode-history-legacy p {
+  margin: 0;
+}
+.episode-history-legacy small {
+  display: block;
+  margin-top: .35rem;
+  color: var(--muted);
+}
+.episode-history-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 10rem), 1fr));
+  gap: .65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.episode-history-list li > :is(a, div) {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  min-height: 5.2rem;
+  padding: .7rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.episode-history-list a:hover {
+  border-color: var(--pink);
+}
+.episode-history-list .has-record span,
+.episode-history-list small {
+  color: var(--pink);
+}
+.episode-history-list span,
+.episode-history-list div small {
+  color: var(--muted);
+}

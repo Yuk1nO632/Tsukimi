@@ -99,6 +99,7 @@ class AccountProgressTests(unittest.TestCase):
         self.assertTrue(state["pending_import"])
         self.assertNotEqual(old_cookie, client.cookies.get(COOKIE_NAME))
         self.assertEqual(client.get("/api/collection").json()["items"], [])
+        self.assertEqual(client.get(f"/api/progress/{ANIME}/episodes").json()["items"], [])
         self.assertEqual(
             client.put(
                 f"/api/progress/{ANIME}",
@@ -114,6 +115,8 @@ class AccountProgressTests(unittest.TestCase):
                 200,
             )
         self.assertEqual(len(client.get("/api/collection").json()["items"]), 1)
+        history = client.get(f"/api/progress/{ANIME}/episodes").json()["items"]
+        self.assertEqual([(item["episode"], item["position"]) for item in history], [(1, 120)])
         self.assertEqual(
             client.get(f"/api/progress/{ANIME}").json()["item"]["position"], 120
         )
@@ -227,6 +230,57 @@ class AccountProgressTests(unittest.TestCase):
             2,
         )
 
+    def test_episode_history_restores_earlier_position_and_keeps_completion(self):
+        client = self.client()
+        path = f"/api/progress/{ANIME}"
+        first = self.payload(client, episode=4, position=760)
+        first.update(source_provider="xifan", source_id=723, line_id=3)
+        self.assertEqual(client.put(path, json=first).status_code, 200)
+        finished = self.payload(client, revision=1, episode=8, position=1500)
+        finished["completed"] = True
+        saved = client.put(path, json=finished)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(client.put(path, json=finished).json(), saved.json())
+
+        earlier = client.get(path, params={"episode": 4}).json()
+        self.assertEqual((earlier["item"]["episode"], earlier["item"]["revision"]), (8, 2))
+        record = earlier["episode_item"]
+        self.assertEqual((record["position"], record["source_provider"], record["source_id"], record["line_id"]),
+                         (760, "xifan", 723, 3))
+        self.assertIsNone(client.get(path, params={"episode": 5}).json()["episode_item"])
+        self.assertEqual(client.get(path, params={"episode": 8}).json()["episode_item"]["position"], 0)
+
+        rewatch = self.payload(client, revision=2, episode=8, position=40)
+        self.assertEqual(client.put(path, json=rewatch).status_code, 200)
+        history = client.get(path + "/episodes").json()
+        self.assertEqual([(item["episode"], item["position"], bool(item["completed"])) for item in history["items"]],
+                         [(4, 760, False), (8, 40, True)])
+        self.assertFalse(history["item"]["completed"])
+        self.assertEqual(self.client().get(path + "/episodes").json(), {"item": None, "items": []})
+
+    def test_legacy_resume_is_readable_without_backfilling_history(self):
+        client = self.client()
+        client.get("/api/account")
+        owner = self.sql("SELECT owner_id FROM sessions")[0][0]
+        self.sql(
+            """INSERT INTO watch_progress
+               (owner_id, anime_id, episode, position, duration, completed,
+                revision, updated_at, operation_id)
+               VALUES (?, ?, 9, 420, 1500, 0, 3, 1, ?)""",
+            (owner, ANIME, secrets.token_hex(16)),
+        )
+        path = f"/api/progress/{ANIME}"
+        legacy = client.get(path, params={"episode": 9}).json()
+        self.assertEqual(legacy["item"]["position"], 420)
+        self.assertIsNone(legacy["episode_item"])
+        self.assertEqual(client.get(path + "/episodes").json()["items"], [])
+        self.assertEqual(client.get("/api/progress").json()["items"][0]["furthest_episode"], 9)
+
+        self.assertEqual(client.put(path, json=self.payload(client, revision=3, episode=2)).status_code, 200)
+        record = client.get("/api/progress").json()["items"][0]
+        self.assertEqual((record["episode"], record["furthest_episode"]), (2, 9))
+        self.assertEqual([item["episode"] for item in client.get(path + "/episodes").json()["items"]], [2])
+
     def test_progress_validation_and_no_unsigned_cookie_writes(self):
         client = self.client()
         self.assertEqual(
@@ -300,6 +354,7 @@ class AccountProgressTests(unittest.TestCase):
         for payload in (old, stale):
             self.assertEqual(client.put(f"/api/progress/{ANIME}", json=payload).status_code, 409)
         self.assertEqual(client.get("/api/progress").json()["items"], [])
+        self.assertEqual(client.get(f"/api/progress/{ANIME}/episodes").json()["items"], [])
         revision = client.get(f"/api/progress/{ANIME}").json()["item"]["revision"]
         response = client.put(f"/api/progress/{ANIME}", json=self.payload(client, revision, position=10))
         self.assertEqual(response.status_code, 200)

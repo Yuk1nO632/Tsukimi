@@ -2,7 +2,7 @@
 
 import time
 from typing import Literal
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -33,9 +33,27 @@ def create_progress_router(store, sessions, scope):
     def list_progress(request: Request, response: Response):
         return {"items": store.list_progress(sessions.ensure(request, response))}
 
+    @router.get("/{anime_id}/episodes")
+    def read_episode_history(anime_id: str, request: Request, response: Response):
+        owner = sessions.ensure(request, response)
+        with store.connect() as connection:
+            connection.execute("BEGIN")
+            return {
+                "item": store.progress_row(connection, owner, anime_id),
+                "items": store.episode_history_rows(connection, owner, anime_id),
+            }
+
     @router.get("/{anime_id}")
-    def read_progress(anime_id: str, request: Request, response: Response):
-        return {"item": store.progress(sessions.ensure(request, response), anime_id)}
+    def read_progress(anime_id: str, request: Request, response: Response,
+                      episode: int | None = Query(default=None, ge=1, le=100000)):
+        owner = sessions.ensure(request, response)
+        if episode is None:
+            return {"item": store.progress(owner, anime_id)}
+        with store.connect() as connection:
+            connection.execute("BEGIN")
+            item = store.progress_row(connection, owner, anime_id)
+            episodes = store.episode_history_rows(connection, owner, anime_id, episode)
+            return {"item": item, "episode_item": episodes[0] if episodes else None}
 
     @router.put("/{anime_id}")
     def save_progress(anime_id: str, payload: ProgressInput, request: Request):
@@ -60,28 +78,36 @@ def create_progress_router(store, sessions, scope):
                     status_code=409,
                     content={"detail": "另一设备已更新观看进度。", "item": current},
                 )
+            position = min(payload.position, payload.duration)
+            updated_at = time.time_ns() // 1000000
+            completed = int(payload.completed)
             connection.execute(
                 """INSERT INTO watch_progress
-                (owner_id, anime_id, episode, position, duration, source_id, line_id, completed, revision, updated_at, operation_id, source_provider)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (owner_id, anime_id, episode, position, duration, source_id, line_id, completed,
+                 revision, updated_at, operation_id, source_provider, furthest_episode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(owner_id, anime_id) DO UPDATE SET
                 episode=excluded.episode, position=excluded.position, duration=excluded.duration,
-                source_id=excluded.source_id, line_id=excluded.line_id, source_provider=excluded.source_provider, completed=excluded.completed,
-                revision=excluded.revision, updated_at=excluded.updated_at, operation_id=excluded.operation_id""",
-                (
-                    owner,
-                    anime_id,
-                    payload.episode,
-                    min(payload.position, payload.duration),
-                    payload.duration,
-                    payload.source_id,
-                    payload.line_id,
-                    int(payload.completed),
-                    revision + 1,
-                    time.time_ns() // 1000000,
-                    payload.operation_id,
-                    payload.source_provider,
-                ),
+                source_id=excluded.source_id, line_id=excluded.line_id,
+                source_provider=excluded.source_provider, completed=excluded.completed,
+                revision=excluded.revision, updated_at=excluded.updated_at, operation_id=excluded.operation_id,
+                furthest_episode=MAX(watch_progress.furthest_episode, watch_progress.episode, excluded.episode)""",
+                (owner, anime_id, payload.episode, position, payload.duration,
+                 payload.source_id, payload.line_id, completed, revision + 1,
+                 updated_at, payload.operation_id, payload.source_provider, payload.episode),
+            )
+            connection.execute(
+                """INSERT INTO watch_episode_history
+                (owner_id, anime_id, episode, position, duration, completed, updated_at,
+                 source_provider, source_id, line_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(owner_id, anime_id, episode) DO UPDATE SET
+                position=excluded.position, duration=excluded.duration,
+                completed=MAX(watch_episode_history.completed, excluded.completed),
+                updated_at=excluded.updated_at, source_provider=excluded.source_provider,
+                source_id=excluded.source_id, line_id=excluded.line_id""",
+                (owner, anime_id, payload.episode, 0 if completed else position, payload.duration,
+                 completed, updated_at, payload.source_provider, payload.source_id, payload.line_id),
             )
             return {"item": store.progress_row(connection, owner, anime_id)}
 
@@ -110,10 +136,13 @@ def create_progress_router(store, sessions, scope):
             connection.execute(
                 """UPDATE watch_progress SET
                 episode=1, position=0, duration=0, source_id=NULL, line_id=NULL,
-                source_provider='anich', completed=0, revision=?, updated_at=?, operation_id=?
+                source_provider='anich', completed=0, furthest_episode=0,
+                revision=?, updated_at=?, operation_id=?
                 WHERE owner_id=? AND anime_id=?""",
                 (revision + 1, time.time_ns() // 1000000, payload.operation_id, owner, anime_id),
             )
+            connection.execute("DELETE FROM watch_episode_history WHERE owner_id = ? AND anime_id = ?",
+                               (owner, anime_id))
             return {"item": store.progress_row(connection, owner, anime_id)}
 
     return router

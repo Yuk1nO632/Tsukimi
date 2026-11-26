@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import PlayerIcon from "./player-icon";
+import SeriesSequelLink from "./series-sequel-link";
 
 const PLAYBACK_RATES = [0.5, 1, 1.25, 1.5, 2];
 const PREFERENCES_KEY = "tsukimi:player-prefs";
@@ -39,7 +40,7 @@ function formatTime(value) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onSwitchSource, onMediaError, onNextLine, nextHref, autoPlay, initialMuted = false, active, globalKeyboard = false, initialPosition = 0, onProgress, rememberPreferences = false }) {
+export default function MediaPlayer({ media, poster, label, wide, onWide, onRetry, onFindSource, onSwitchSource, onMediaError, onNextLine, nextHref, sequelSeriesId, autoPlay, initialMuted = false, active, globalKeyboard = false, initialPosition = 0, onProgress, rememberPreferences = false }) {
   const progressCallback = useRef(onProgress);
   progressCallback.current = onProgress;
   const startedRef = useRef(false);
@@ -389,7 +390,18 @@ export default function MediaPlayer({ media, poster, label, wide, onWide, onRetr
       <div className="player-topline"><span className="player-watermark">☾ TSUKIMI</span><span className="player-now-title">{label}</span></div>
       {media.isTest && <span className="test-video-label">测试短片 · 非番剧正片</span>}
       {initialLoading ? <div className="player-buffering" role="status"><span className="loading-dot" />{media.status === "loading" ? "正在加载来源…" : "正在加载视频…"}</div> : overlay ? <div className="player-empty"><span className={`player-empty-icon${media.status === "loading" ? " is-loading" : ""}`} aria-hidden="true"><PlayerIcon name={media.status === "loading" ? "refresh" : "play"} size={30} /></span><h2>{heading}</h2><p>{videoError || media.message || "正在获取这一集的播放地址，请稍候。"}</p>{media.status !== "loading" && <div className="player-empty-actions">{playbackActions()}</div>}</div>
-        : ended ? <div className="player-ended"><span>本次播放已结束</span><div><button type="button" onClick={togglePlay}>重新播放</button>{nextHref && !media.isTest && <Link href={nextHref} scroll={false}>下一集 <PlayerIcon name="next" size={16} /></Link>}</div></div>
+        : ended ? (
+          <div className="player-ended">
+            <span>本次播放已结束</span>
+            <div>
+              <button type="button" onClick={togglePlay}>重新播放</button>
+              {!media.isTest && nextHref && (
+                <Link href={nextHref} scroll={false}>下一集 <PlayerIcon name="next" size={16} /></Link>
+              )}
+              {!media.isTest && !nextHref && sequelSeriesId && <SeriesSequelLink animeId={sequelSeriesId} />}
+            </div>
+          </div>
+        )
         : !playing && !initialLoading && <button className="player-center-play" type="button" onClick={togglePlay} aria-label="开始播放视频"><PlayerIcon name="play" size={32} /></button>}
       {!overlay && !initialLoading && waiting && <div className="player-buffering" role="status"><span className="loading-dot" />正在缓冲…</div>}
     </div>

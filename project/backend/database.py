@@ -97,6 +97,14 @@ class Database:
                 source_id INTEGER, line_id INTEGER, completed INTEGER NOT NULL DEFAULT 0,
                 revision INTEGER NOT NULL, updated_at INTEGER NOT NULL, operation_id TEXT NOT NULL, source_provider TEXT NOT NULL DEFAULT 'anich',
                 PRIMARY KEY(owner_id, anime_id))""",
+            """CREATE TABLE IF NOT EXISTS watch_episode_history (
+                owner_id TEXT NOT NULL, anime_id TEXT NOT NULL,
+                episode INTEGER NOT NULL, position REAL NOT NULL, duration REAL NOT NULL,
+                completed INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+                source_provider TEXT NOT NULL, source_id INTEGER, line_id INTEGER,
+                PRIMARY KEY(owner_id, anime_id, episode),
+                FOREIGN KEY(owner_id, anime_id) REFERENCES watch_progress(owner_id, anime_id)
+                    ON DELETE CASCADE)""",
             """CREATE TABLE IF NOT EXISTS email_codes (
                 email TEXT NOT NULL, purpose TEXT NOT NULL, digest TEXT NOT NULL,
                 expires_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
@@ -119,6 +127,8 @@ class Database:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(watch_progress)")}
         if "source_provider" not in columns:
             connection.execute("ALTER TABLE watch_progress ADD COLUMN source_provider TEXT NOT NULL DEFAULT 'anich'")
+        if "furthest_episode" not in columns:
+            connection.execute("ALTER TABLE watch_progress ADD COLUMN furthest_episode INTEGER NOT NULL DEFAULT 0")
 
         columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
         if "username" not in columns:
@@ -151,15 +161,42 @@ class Database:
         row = cursor.fetchone()
         if row is None:
             return None
-        return {column[0]: value for column, value in zip(cursor.description, row) if column[0] != "owner_id"}
+        return {column[0]: value for column, value in zip(cursor.description, row)
+                if column[0] not in ("owner_id", "furthest_episode")}
+
+    @staticmethod
+    def episode_history_rows(connection, owner_id, anime_id, episode=None):
+        query = """SELECT anime_id, episode, position, duration, completed, updated_at,
+                   source_provider, source_id, line_id FROM watch_episode_history
+                   WHERE owner_id = ? AND anime_id = ?"""
+        params = (owner_id, anime_id)
+        if episode is not None:
+            query += " AND episode = ?"
+            params += (episode,)
+        cursor = connection.execute(query + " ORDER BY episode", params)
+        fields = [column[0] for column in cursor.description]
+        return [dict(zip(fields, row)) for row in cursor]
 
     def list_progress(self, owner_id):
         with self.connect() as connection:
-            rows = connection.execute("""SELECT p.anime_id, c.data FROM watch_progress p
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute("""SELECT p.*, c.data AS anime,
+                MAX(p.episode, p.furthest_episode, COALESCE((
+                    SELECT MAX(h.episode) FROM watch_episode_history h
+                    WHERE h.owner_id = p.owner_id AND h.anime_id = p.anime_id
+                ), 0)) AS observed_episode
+                FROM watch_progress p
                 JOIN catalog_cache c ON c.anime_id = p.anime_id
                 WHERE p.owner_id = ? AND p.duration > 0
-                ORDER BY p.updated_at DESC, p.anime_id""", (owner_id,)).fetchall()
-            return [{**self.progress_row(connection, owner_id, anime_id), "anime": json.loads(data)} for anime_id, data in rows]
+                ORDER BY p.updated_at DESC, p.anime_id""", (owner_id,))
+            items = []
+            for row in rows:
+                item = dict(row)
+                item.pop("owner_id")
+                item["anime"] = json.loads(item["anime"])
+                item["furthest_episode"] = item.pop("observed_episode")
+                items.append(item)
+            return items
 
     def session_owner(self, token_hash):
         with self.connect() as connection:

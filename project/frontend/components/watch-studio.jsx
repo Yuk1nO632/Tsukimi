@@ -267,6 +267,10 @@ export default function WatchStudio({
               !testMode && source.lines?.length > 1 ? nextLine : undefined
             }
             nextHref={nextHref}
+            sequelSeriesId={
+              airingAnime.airing?.status === "completed" &&
+              selectedEpisode === airingAnime.episodes ? anime.id : undefined
+            }
           />
           <div className="watch-episode-navigation">
             {previousHref ? (

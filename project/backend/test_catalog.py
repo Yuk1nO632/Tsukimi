@@ -329,3 +329,92 @@ class AiringInfoTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SeriesCatalogTests(unittest.TestCase):
+    def setUp(self):
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        self.database = Path(directory) / "series.db"
+        self.subjects = {
+            810001: {**SUBJECT, "id": 810001, "name_cn": "第一季", "platform": "TV"},
+            810002: {**SUBJECT, "id": 810002, "name_cn": "第二季", "date": "2012-04-06", "platform": "TV"},
+            810003: {**SUBJECT, "id": 810003, "name_cn": "续篇电影", "date": "2013-04-06", "platform": "Movie"},
+            810004: {**SUBJECT, "id": 810004, "name_cn": "系列番外", "platform": "OVA"},
+            810005: {**SUBJECT, "id": 810005, "name_cn": "不可公开", "nsfw": True},
+            810006: {**SUBJECT, "id": 810006, "name_cn": "其他续篇", "platform": "TV"},
+        }
+        self.relations = {
+            810001: [self.link(810002, "续集"), self.link(810005, "续集", type_=1)],
+            810002: [self.link(810001, "前传"), self.link(810003, "续集"), self.link(810004, "番外篇")],
+            810003: [self.link(810002, "前传")],
+        }
+
+    def link(self, key, relation, *, type_=2):
+        return {"id": key, "type": type_, "name": "关系接口的简要标题", "name_cn": "", "relation": relation}
+
+    def respond(self, request):
+        parts = request.url.path.split("/")
+        if not request.url.path.startswith("/v0/subjects/"):
+            return httpx.Response(404)
+        identifier = int(parts[3])
+        if len(parts) > 4 and parts[4] == "subjects":
+            relations = self.relations.get(identifier, [])
+            if isinstance(relations, int):
+                return httpx.Response(relations)
+            return httpx.Response(200, json=relations)
+        return httpx.Response(200, json=self.subjects[identifier]) if identifier in self.subjects else httpx.Response(404)
+
+    def client(self):
+        provider = BangumiClient(transport=httpx.MockTransport(self.respond))
+        return TestClient(create_app(database_path=self.database, metadata_source=provider))
+
+    def test_series_walks_confirmed_seasons_and_movie_from_any_main_entry(self):
+        self.relations[810002].append(self.link(810005, "番外篇"))
+        with self.client() as client:
+            first = client.get("/api/catalog/bgm-810001/series").json()
+            middle = client.get("/api/catalog/bgm-810002/series").json()
+        for result in (first, middle):
+            self.assertTrue(result["ordered"])
+            self.assertFalse(result["partial"])
+            self.assertEqual([item["id"] for item in result["main"]], ["bgm-810001", "bgm-810002", "bgm-810003"])
+            self.assertEqual(result["main"][2]["platform"], "Movie")
+            self.assertEqual([(item["id"], item["relation"]) for item in result["extras"]], [("bgm-810004", "番外篇")])
+        self.assertEqual(first["main"][0]["relation"], "当前")
+        self.assertEqual(first["sequel"]["id"], "bgm-810002")
+        self.assertEqual(middle["main"][1]["relation"], "当前")
+        self.assertEqual(middle["sequel"]["id"], "bgm-810003")
+
+    def test_conflicting_edges_and_branches_do_not_invent_a_watch_order(self):
+        self.relations[810001].append(self.link(810006, "续集"))
+        with self.client() as client:
+            branched = client.get("/api/catalog/bgm-810001/series").json()
+        self.assertFalse(branched["ordered"])
+        self.assertIsNone(branched["sequel"])
+        self.assertEqual({item["id"] for item in branched["main"]}, {"bgm-810001", "bgm-810002", "bgm-810006"})
+
+        self.relations[810001].pop()
+        self.relations[810002].append(self.link(810001, "续集"))
+        with self.client() as client:
+            contradictory = client.get("/api/catalog/bgm-810001/series").json()
+        self.assertFalse(contradictory["ordered"])
+        self.assertIsNone(contradictory["sequel"])
+
+    def test_missing_graph_details_keep_direct_link_and_report_partial(self):
+        self.relations[810002] = 503
+        with self.client() as client:
+            response = client.get("/api/catalog/bgm-810001/series")
+            self.assertEqual(response.status_code, 200)
+            partial = response.json()
+            self.assertTrue(partial["partial"])
+            self.assertEqual(partial["sequel"]["id"], "bgm-810002")
+            self.assertEqual(client.get("/api/catalog/bgm-810001?summary=true").status_code, 200)
+
+    def test_invalid_ids_and_upstream_errors_are_distinct_from_no_relations(self):
+        self.relations[810001] = 503
+        with self.client() as client:
+            self.assertEqual(client.get("/api/catalog/impossible/series").status_code, 404)
+            self.assertEqual(client.get("/api/catalog/bgm-810001/series").status_code, 502)
+            standalone = client.get("/api/catalog/bgm-810006/series").json()
+            self.assertFalse(standalone["partial"])
+            self.assertEqual(len(standalone["main"]), 1)
+            self.assertIsNone(standalone["sequel"])

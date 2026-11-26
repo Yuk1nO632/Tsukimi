@@ -82,7 +82,7 @@ export default function ContinueWatching({ animeId, manage = false, history = fa
   async function remove(item) {
     if (
       removing ||
-      !window.confirm(`删除《${item.anime.title}》的观看记录？下次播放将从头开始。`)
+      !window.confirm(`删除《${item.anime.title}》的续播进度与逐集记录？下次播放将从头开始。`)
     )
       return;
     const scope = account.scope;
@@ -186,15 +186,24 @@ export default function ContinueWatching({ animeId, manage = false, history = fa
             <small>{item.completed ? "已看完 · 再次播放 →" : "继续播放 →"}</small>
           </span>
         </Link>
-        {!home && <button
-          className="continue-remove"
-          type="button"
-          aria-label={`删除《${item.anime.title}》的观看记录`}
-          disabled={removing !== null || account.busy}
-          onClick={() => void remove(item)}
-        >
-          {removing === item.anime_id ? "删除中…" : "删除记录"}
-        </button>}
+        {!home && (
+          <div className={history ? "continue-history-actions" : undefined}>
+            {history && (
+              <Link href={`/account/history/${item.anime.id}`} prefetch={false}>
+                逐集记录 →
+              </Link>
+            )}
+            <button
+              className={history ? undefined : "continue-remove"}
+              type="button"
+              aria-label={`删除《${item.anime.title}》的观看记录`}
+              disabled={removing !== null || account.busy}
+              onClick={() => void remove(item)}
+            >
+              {removing === item.anime_id ? "删除中…" : "删除记录"}
+            </button>
+          </div>
+        )}
       </article>
     );
   }

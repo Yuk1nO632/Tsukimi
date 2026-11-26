@@ -1,0 +1,158 @@
+.watching-queue {
+  display: grid;
+  gap: 13px;
+  margin-block: 20px 26px;
+}
+.watching-queue h2 {
+  font-size: 21px;
+}
+.watching-queue h3 {
+  font-size: 16px;
+}
+.watching-queue :is(h2, h3, h4, p, ul) {
+  margin: 0;
+}
+.watching-queue-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+  align-items: start;
+}
+.watching-queue-columns > section {
+  display: grid;
+  gap: 10px;
+  padding: 15px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  min-width: 0;
+}
+.watching-queue ul {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+.watching-queue-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding-block: 9px;
+}
+.watching-queue-row + .watching-queue-row {
+  border-top: 1px solid var(--line);
+}
+.watching-queue-anime {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.watching-queue-anime strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.watching-queue-cover {
+  position: relative;
+  flex: 0 0 42px;
+  height: 56px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--soft);
+}
+.watching-queue-cover img {
+  object-fit: cover;
+}
+.watching-queue-status {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.watching-queue-status > :last-child {
+  color: var(--ink);
+  font-weight: 600;
+}
+.watching-queue-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 5px 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 7px 0 1px 51px;
+}
+.watching-queue-actions .outline-button {
+  min-height: 31px;
+  margin-inline-start: auto;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.watching-queue-actions .text-button {
+  min-height: 30px;
+}
+.watching-queue-availability {
+  color: var(--muted);
+  font-size: 12px;
+}
+.watching-queue-row > .watching-queue-availability {
+  grid-column: 2;
+}
+.watching-queue-availability.is-playable {
+  color: var(--blue);
+  font-weight: 650;
+}
+.watching-queue-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.watching-queue-day h4 {
+  width: fit-content;
+  margin-bottom: 3px;
+  padding: 4px 9px;
+  background: var(--accent-soft);
+  color: var(--blue);
+  border-radius: 99px;
+  font-size: 12px;
+}
+.watching-queue :is(a, button):focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .watching-queue-columns {
+    grid-template-columns: 1fr;
+  }
+  .watching-queue-day {
+    position: relative;
+    padding-inline-start: 13px;
+    border-inline-start: 2px solid var(--line);
+  }
+  .watching-queue-day h4::before {
+    content: "";
+    position: absolute;
+    inset: 9px auto auto -4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--pink);
+  }
+}
+@media (max-width: 420px) {
+  .watching-queue-columns > section {
+    padding-inline: 11px;
+  }
+  .watching-queue-status {
+    font-size: 11px;
+  }
+  .watching-queue-actions {
+    margin-inline-start: 0;
+  }
+}

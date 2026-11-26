@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { readPublic, cachedPublic } from "../lib/public-cache";
+import { platformLabel, releaseLabel, searchPartLabel } from "../lib/catalog-display";
 import PlayerIcon from "./player-icon";
 
 export default function HeaderSearch() {
@@ -180,37 +181,41 @@ export default function HeaderSearch() {
                 暂无相关番剧，试试别名。
               </p>
             )}
-            {items.map((anime, index) => (
-              <Link
-                prefetch={false}
-                role="option"
-                id={`search-option-${index}`}
-                aria-selected={active === index}
-                tabIndex={-1}
-                href={`/anime/${anime.id}`}
-                key={anime.id}
-                className="search-suggest-option"
-                onPointerMove={() => setActive(index)}
-                onClick={() => {
-                  setOpen(false);
-                  setActive(-1);
-                }}
-              >
-                <span className="search-suggest-cover">
-                  <Image src={anime.cover} alt="" fill sizes="40px" />
-                </span>
-                <span className="search-suggest-copy">
-                  <strong>{anime.title}</strong>
-                  <small>
-                    {anime.year || "年份待定"} · {anime.platform || "动画"} ·{" "}
-                    {anime.episodes ? `${anime.episodes} 集` : "集数待定"}
-                  </small>
-                </span>
-                <span className="search-suggest-score">
-                  {anime.score > 0 ? anime.score.toFixed(1) : ""}
-                </span>
-              </Link>
-            ))}
+            {items.map((anime, index) => {
+              const part = searchPartLabel(anime);
+              return (
+                <Link
+                  prefetch={false}
+                  role="option"
+                  id={`search-option-${index}`}
+                  aria-selected={active === index}
+                  tabIndex={-1}
+                  href={`/anime/${anime.id}`}
+                  key={anime.id}
+                  className="search-suggest-option"
+                  onPointerMove={() => setActive(index)}
+                  onClick={() => {
+                    setOpen(false);
+                    setActive(-1);
+                  }}
+                >
+                  <span className="search-suggest-cover">
+                    <Image src={anime.cover} alt="" fill sizes="40px" />
+                  </span>
+                  <span className="search-suggest-copy">
+                    <strong>{anime.title}</strong>
+                    <small>
+                      {releaseLabel(anime)} · {platformLabel(anime.platform)} ·{" "}
+                      {part || (anime.episodes ? anime.episodes + " 集" : "集数待定")}
+                    </small>
+                    {anime.originalTitle && anime.originalTitle !== anime.title && <small>{anime.originalTitle}</small>}
+                  </span>
+                  <span className="search-suggest-score">
+                    {anime.score > 0 ? anime.score.toFixed(1) : ""}
+                  </span>
+                </Link>
+              );
+            })}
           </div>
           <Link
             prefetch={false}

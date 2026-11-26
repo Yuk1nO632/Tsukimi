@@ -12,6 +12,10 @@ from typing import Literal
 
 GENRES = ("奇幻", "科幻", "日常", "恋爱", "悬疑", "治愈", "音乐", "战斗", "搞笑", "运动", "冒险")
 SHANGHAI = timezone(timedelta(hours=8))
+SERIES_SEQUENCE = {"前传", "续集"}
+SERIES_EXTRAS = {"番外篇", "总集篇", "全集", "衍生", "主线故事", "不同演绎"}
+SERIES_LIMIT = 8
+SERIES_BUDGET = 8.0
 
 
 class CatalogError(Exception):
@@ -135,6 +139,43 @@ def airing_info(anime, episodes, today=None):
     }
 
 
+def series_links(raw, current_id):
+    if not isinstance(raw, list):
+        raise CatalogError("系列关联资料暂时无法读取。")
+    links = {}
+    for item in raw:
+        if not isinstance(item, dict) or item.get("type") != 2 or item.get("nsfw"):
+            continue
+        identifier, relation = item.get("id"), item.get("relation")
+        if (type(identifier) is not int or not 1 <= identifier <= 999_999_999
+                or not isinstance(relation, str) or relation not in SERIES_SEQUENCE | SERIES_EXTRAS):
+            continue
+        anime_id = f"bgm-{identifier}"
+        if anime_id != current_id:
+            links.setdefault(anime_id, set()).add(relation)
+    return links
+
+
+def ordered_series(anime_ids, edges):
+    remaining = set(anime_ids)
+    order = []
+    while remaining:
+        incoming = {after for before, after in edges if before in remaining and after in remaining}
+        first = remaining - incoming
+        if len(first) != 1:
+            return []
+        item = first.pop()
+        remaining.remove(item)
+        order.append(item)
+    return order
+
+
+def series_item(anime, relation):
+    return {
+        key: anime.get(key, "") for key in ("id", "title", "originalTitle", "cover", "releaseDate", "year", "platform")
+    } | {"relation": relation}
+
+
 class BangumiClient:
     def __init__(self, transport=None):
         self.transport = transport
@@ -154,15 +195,16 @@ class BangumiClient:
                 self._client = httpx.Client(timeout=15, transport=self.transport)
             return self._client
 
-    def request(self, method, path, body=None):
+    def request(self, method, path, body=None, *, timeout=None):
         key = (method, path, json.dumps(body, sort_keys=True))
         with self.lock:
             cached = self.cache.get(key)
         if cached and time.monotonic() - cached[0] < 600:
             return cached[1]
         try:
-            response = self.http_client().request(method, "https://api.bgm.tv" + path, json=body,
-                headers={"User-Agent": "Tsukimi/0.4 (personal fullstack study project)", "Accept": "application/json"})
+            client = self.http_client()
+            response = client.request(method, "https://api.bgm.tv" + path, json=body,
+                timeout=client.timeout if timeout is None else timeout, headers={"User-Agent": "Tsukimi/0.4 (personal fullstack study project)", "Accept": "application/json"})
             if response.status_code == 404:
                 raise CatalogError("未找到这部番剧。", 404)
             if response.status_code == 429:
@@ -235,6 +277,108 @@ class Catalog:
                 },
             }
 
+    def series(self, anime_id):
+        if re.fullmatch(r"bgm-[1-9]\d{0,8}", anime_id) is None:
+            raise CatalogError("未找到这部番剧。", 404)
+
+        deadline = time.monotonic() + SERIES_BUDGET
+
+        def read(path):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise CatalogError("系列关联资料读取超时，请重试。", 504)
+            return self.provider.request("GET", path, timeout=min(remaining, 4.0))
+
+        def describe(subject_id):
+            cached = self.store.cached_anime(subject_id)
+            if cached:
+                return cached[0]
+            anime = normalize(read("/v0/subjects/" + subject_id[4:]))
+            if anime["id"] != subject_id:
+                raise CatalogError("资料服务返回了不一致的条目，请重试。")
+            return self.remember(anime)
+
+        # The relations response omits safety flags and release dates. Use verified
+        # subject metadata for the cards and keep supplemental links out of the chain.
+        def read_links(subject_id):
+            return series_links(read(f"/v0/subjects/{subject_id[4:]}/subjects"), subject_id)
+
+        current = describe(anime_id)
+        direct = read_links(anime_id)
+        main = {anime_id: current}
+        edges = set()
+        extras = {}
+        observed = {anime_id}
+        pending = [anime_id]
+        partial = False
+
+        for current_id in pending:
+            try:
+                links = direct if current_id == anime_id else read_links(current_id)
+            except CatalogError:
+                partial = True
+                break
+
+            for subject_id, relations in links.items():
+                supplemental = relations & SERIES_EXTRAS
+                if supplemental:
+                    extras.setdefault(subject_id, sorted(supplemental)[0])
+                    continue
+                if subject_id not in observed:
+                    if len(observed) >= SERIES_LIMIT:
+                        partial = True
+                        continue
+                    observed.add(subject_id)
+                    try:
+                        main[subject_id] = describe(subject_id)
+                    except CatalogError as error:
+                        partial = partial or error.status_code != 404
+                    else:
+                        pending.append(subject_id)
+                if subject_id in main:
+                    if "前传" in relations:
+                        edges.add((subject_id, current_id))
+                    if "续集" in relations:
+                        edges.add((current_id, subject_id))
+
+        order = ordered_series(main, edges)
+        direct_sequels = [
+            subject_id for subject_id, relations in direct.items() if relations == {"续集"}
+        ]
+        sequel = None
+        if order and len(direct_sequels) == 1:
+            following = order.index(anime_id) + 1
+            if following < len(order) and order[following] == direct_sequels[0]:
+                sequel = series_item(main[order[following]], "续集")
+
+        if order:
+            current_index = order.index(anime_id)
+            main_items = [
+                series_item(main[subject_id], "当前" if index == current_index else
+                            "前传" if index < current_index else "续集")
+                for index, subject_id in enumerate(order)
+            ]
+        else:
+            main_items = [series_item(current, "当前")]
+            for subject_id, relations in direct.items():
+                if subject_id in main:
+                    relation = next(iter(relations)) if len(relations) == 1 else "关联作品"
+                    main_items.append(series_item(main[subject_id], relation))
+
+        extra_items = []
+        candidates = [(subject_id, relation) for subject_id, relation in extras.items() if subject_id not in main]
+        partial |= len(candidates) > SERIES_LIMIT
+        for subject_id, relation in candidates[:SERIES_LIMIT]:
+            try:
+                extra_items.append(series_item(describe(subject_id), relation))
+            except CatalogError as error:
+                if error.status_code != 404:
+                    partial = True
+                    break
+
+        return {"main": main_items, "extras": extra_items, "ordered": bool(order),
+                "partial": partial, "sequel": sequel}
+
     def search(self, q, year, season, genre, sort, page, limit):
         filters = {"type": [2], "nsfw": False}
         if season and not year:
@@ -299,6 +443,10 @@ def create_catalog_router():
     @router.get("/calendar")
     def calendar(request: Request):
         return request.app.state.catalog.calendar()
+
+    @router.get("/{anime_id}/series")
+    def series(anime_id: str, request: Request):
+        return request.app.state.catalog.series(anime_id)
 
     @router.get("/{anime_id}")
     def detail(anime_id: str, request: Request, summary: bool = False):
